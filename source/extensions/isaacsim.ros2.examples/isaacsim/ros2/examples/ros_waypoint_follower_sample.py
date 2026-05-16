@@ -59,7 +59,7 @@ class WaypointFollower(BaseResetNode):
         try:
             rclpy.init()
             self._navigator = BasicNavigator()
-        except:
+        except Exception:
             pass
         self.initialized = True
 
@@ -133,7 +133,7 @@ class WaypointFollower(BaseResetNode):
             elif result == TaskResult.FAILED:
                 post_notification("Goal failed!", status=NotificationStatus.WARNING)
                 self._navigator.get_logger().info("Goal canceled")
-        except:
+        except Exception:
             pass
 
     # Overriding a function from BaseResetNode.
@@ -227,7 +227,7 @@ class Patrolling(BaseResetNode):
         try:
             rclpy.init()
             self._navigator = BasicNavigator()
-        except:
+        except Exception:
             pass
         self.initialized = True
 
@@ -299,7 +299,7 @@ class Patrolling(BaseResetNode):
                     post_notification(f'Round {self._counter} is either Failed or Cancelled!', status=NotificationStatus.WARNING)
                     self._navigator.get_logger().info(f'Round {self._counter} is completed')
                     break
-            except:
+            except Exception:
                 pass
 
     # Overriding a function from BaseResetNode.
@@ -616,7 +616,7 @@ class Extension(omni.ext.IExt):
                     return False
             else:
                 self._number_of_waypoints = 1
-        except:
+        except Exception:
             post_notification("Waypoint count must be an integer", status=NotificationStatus.WARNING)
             return False
 
@@ -633,7 +633,7 @@ class Extension(omni.ext.IExt):
                 self._create_ros_action_graph()
                 for _xform in range(self._number_of_waypoints):
                     self._create_waypoints(f"{self._goal_parent_prim}/waypoint_{_xform}")
-            except:
+            except Exception:
                 post_notification(
                     f"Please delete {self._og_path} and /World/Waypoints from stage and try again",
                     status=NotificationStatus.WARNING,
