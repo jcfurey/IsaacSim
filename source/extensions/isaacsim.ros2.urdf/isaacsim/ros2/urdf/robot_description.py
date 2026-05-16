@@ -80,16 +80,21 @@ class RobotDescription:
         out_dir = os.path.normpath(os.path.join(self._extension_path, "data", "urdf"))
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.normpath(os.path.join(out_dir, f"{self.package_name}.urdf"))
-        print(out_path)
+        carb.log_info(f"ROS2 URDF Importer: wrote URDF to {out_path}")
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(urdf_description)
 
         self.urdf_description = urdf_description
         self._last_urdf_path = os.path.normpath(out_path)
+        # package_found reflects whether any package:// URL in the URDF resolved
+        # to a filesystem path, not whether the ROS node was found. The previous
+        # status text ("ROS node found / not found") misled users into thinking
+        # the read had failed when in fact the URDF just had no package:// refs
+        # or had refs to packages not on AMENT_PREFIX_PATH.
         if package_found:
-            self._set_status("ROS node found")
+            self._set_status("URDF received, package URLs resolved")
         else:
-            self._set_status("ROS node not found", color=0xFF0000FF)
+            self._set_status("URDF received; some package:// URLs not resolved", color=0xFFCCAA00)
         self._option_widget.set_refresh_enabled(True)
         self._option_widget.set_import_enabled(True)
 

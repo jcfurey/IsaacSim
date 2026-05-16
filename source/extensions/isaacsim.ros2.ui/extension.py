@@ -13,13 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import carb
 import omni.ext
 from isaacsim.ros2.ui.og_shortcuts_menu import Ros2ShortcutsMenuExtension
 
 
 class Extension(omni.ext.IExt):
     def on_startup(self, ext_id):
-        print("ROS2 UI extension startup")
+        carb.log_info("ROS2 UI extension startup")
 
         self.shortcuts_menu = Ros2ShortcutsMenuExtension()
         self.shortcuts_menu.on_startup(ext_id)

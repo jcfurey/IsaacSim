@@ -417,7 +417,6 @@ class Ros2JointStatesGraph(MenuHelperWindow):
                 js_sub_node_name = Path(js_sub_node_path).name
             elif node_type == "isaacsim.core.nodes.IsaacArticulationController":
                 msg = "already has an articulation controller node, CREATING A NEW ARTICULATION NODE"
-                print(msg)
                 post_notification(msg, status=NotificationStatus.WARNING)
                 art_node = get_next_free_path(node_path, "")
                 art_node_name = Path(art_node).name
