@@ -215,7 +215,6 @@ public:
                     auto inputValue =
                         getAttributeReadableArrayData<bool*>(db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<bool>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     // std::vector<bool> is a specialization that has no ::data
                     for (size_t j = 0; j < arraySize; ++j)
@@ -237,7 +236,6 @@ public:
                     auto inputValue =
                         getAttributeReadableArrayData<uint8_t*>(db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<uint8_t>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(uint8_t));
                 }
@@ -255,7 +253,6 @@ public:
                     auto inputValue =
                         getAttributeReadableArrayData<int32_t*>(db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<int32_t>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(int32_t));
                 }
@@ -273,7 +270,6 @@ public:
                     auto inputValue = getAttributeReadableArrayData<uint32_t*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<uint32_t>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(uint32_t));
                 }
@@ -291,7 +287,6 @@ public:
                     auto inputValue =
                         getAttributeReadableArrayData<int64_t*>(db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<int64_t>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(int64_t));
                 }
@@ -309,7 +304,6 @@ public:
                     auto inputValue = getAttributeReadableArrayData<uint64_t*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<uint64_t>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(uint64_t));
                 }
@@ -332,7 +326,6 @@ public:
                     auto inputValue =
                         getAttributeReadableArrayData<float*>(db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<float>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(float));
                 }
@@ -350,7 +343,6 @@ public:
                     auto inputValue =
                         getAttributeReadableArrayData<double*>(db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<double>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(double));
                 }
@@ -368,7 +360,6 @@ public:
                     auto inputValue = getAttributeReadableArrayData<NameToken*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<std::string>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     for (size_t j = 0; j < arraySize; ++j)
                     {
@@ -389,7 +380,6 @@ public:
                     auto inputValue = getAttributeReadableArrayData<NameToken*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<nlohmann::json>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     for (size_t j = 0; j < arraySize; ++j)
                     {
