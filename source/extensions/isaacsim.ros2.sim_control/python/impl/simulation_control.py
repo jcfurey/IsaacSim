@@ -1074,14 +1074,8 @@ class SimulationControl:
 
             # Step through the requested number of frames
             for i in range(steps):
-
                 # Wait for the frame to process
                 await app.next_update_async()
-
-                # Set successful response
-                response.result.result = Result.RESULT_OK
-
-                response.result.error_message = f"Successfully stepped simulation by {steps} frames."
 
             # Pause the simulation when done
             self.timeline.pause()
@@ -1089,6 +1083,12 @@ class SimulationControl:
             # Ensure the pause takes effect
             await app.next_update_async()
             await app.next_update_async()
+
+            # Set the success result only after every step completed; otherwise
+            # an exception partway through would leave the response showing
+            # RESULT_OK / "Successfully stepped..." from the previous iteration.
+            response.result.result = Result.RESULT_OK
+            response.result.error_message = f"Successfully stepped simulation by {steps} frames."
 
         except Exception as e:
             # Ensure simulation is paused if an error occurs
