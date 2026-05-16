@@ -15,6 +15,7 @@
 import argparse
 import logging
 import os
+import sys
 import time
 from collections import deque
 
@@ -409,3 +410,10 @@ else:
 node.destroy_node()
 rclpy.shutdown()
 simulation_app.close()
+
+# Propagate the test result to the process exit code so CI sees the failure.
+# Previously this script printed "[fatal] ❌" / "[error] No messages received."
+# and still exited with status 0, hiding regressions from any caller checking
+# the return code. `deltas` may be empty (no message pairs) -> failure too.
+if not deltas or not passed:
+    sys.exit(1)
