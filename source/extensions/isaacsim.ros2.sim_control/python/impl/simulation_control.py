@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import asyncio
+import concurrent.futures
 import os
 import threading
 
@@ -331,6 +332,14 @@ class ROS2ServiceManager:
             carb.log_error(f"Failed to register action server '{action_name}': {e}")
             return False
 
+    # Maximum time to wait for an async service/action callback to complete.
+    # Without this bound, a single hung callback blocks the rclpy executor
+    # thread indefinitely and silently breaks every other service on this
+    # node. Override on the manager instance if you have a legitimate
+    # long-running callback (typically the right answer is to redesign the
+    # callback to be non-blocking).
+    ASYNC_CALLBACK_TIMEOUT_SEC = 60.0
+
     def _wrap_async_callback(self, async_callback):
         """Wrap any async callback to work with ROS2 services and actions
 
@@ -346,7 +355,16 @@ class ROS2ServiceManager:
                 self.loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(self.loop)
             future = asyncio.run_coroutine_threadsafe(async_callback(*args, **kwargs), self.loop)
-            return future.result()
+            try:
+                return future.result(timeout=self.ASYNC_CALLBACK_TIMEOUT_SEC)
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                carb.log_error(
+                    f"Async ROS2 callback exceeded {self.ASYNC_CALLBACK_TIMEOUT_SEC}s timeout and was cancelled. "
+                    "The client will receive a service error. If this is expected, raise "
+                    "ROS2ServiceManager.ASYNC_CALLBACK_TIMEOUT_SEC on the manager instance."
+                )
+                raise
 
         return wrapper
 
