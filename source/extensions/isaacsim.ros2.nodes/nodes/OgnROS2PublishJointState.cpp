@@ -84,12 +84,15 @@ public:
 
         if (hasSensorInputs)
         {
-            std::vector<std::string> jointNames;
-            std::vector<double> positions, velocities, efforts;
-            std::vector<uint8_t> dofTypes;
+            // Use persistent state vectors here instead of locals so capacity is
+            // reused across compute() calls. validateAndGatherSensorInputs will
+            // resize them in place; for a stable joint count this means zero
+            // allocations after the first frame, which matters at the typical
+            // 60-200 Hz JointState publish rates.
             double stageMetersPerUnit = 0.0;
-            if (!validateAndGatherSensorInputs(
-                    db, jointNames, positions, velocities, efforts, dofTypes, stageMetersPerUnit))
+            if (!validateAndGatherSensorInputs(db, state.m_sensorJointNames, state.m_sensorPositions,
+                                               state.m_sensorVelocities, state.m_sensorEfforts, state.m_sensorDofTypes,
+                                               stageMetersPerUnit))
             {
                 return false;
             }
@@ -97,8 +100,9 @@ public:
             {
                 return false;
             }
-            return publishFromSensorInputs(
-                db, state, jointNames, positions, velocities, efforts, dofTypes, stageMetersPerUnit);
+            return publishFromSensorInputs(db, state, state.m_sensorJointNames, state.m_sensorPositions,
+                                           state.m_sensorVelocities, state.m_sensorEfforts, state.m_sensorDofTypes,
+                                           stageMetersPerUnit);
         }
 
         if (hasTargetPrim)
@@ -341,6 +345,14 @@ private:
     std::vector<float> m_jointVelocities;
     std::vector<float> m_jointEfforts;
     std::vector<uint8_t> m_dofTypes;
+
+    // Persistent buffers for the sensor-input path so vector::resize() reuses
+    // capacity across publishes instead of reallocating per frame.
+    std::vector<std::string> m_sensorJointNames;
+    std::vector<double> m_sensorPositions;
+    std::vector<double> m_sensorVelocities;
+    std::vector<double> m_sensorEfforts;
+    std::vector<uint8_t> m_sensorDofTypes;
 
     double m_unitScale = 1;
     bool m_deprecationWarningLogged = false;
