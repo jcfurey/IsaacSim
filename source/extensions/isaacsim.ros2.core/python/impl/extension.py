@@ -174,5 +174,10 @@ class ROS2CoreExtension(omni.ext.IExt):
             output = subprocess.check_output(command, cwd=path)
             return True
         except subprocess.CalledProcessError as grepexc:
-            print(grepexc.output.decode("utf-8"))
+            # Route the checker's stderr through Carb so the user actually sees
+            # *why* the bridge failed to start. The previous print(...) only
+            # surfaced in stdout, which is invisible in the Isaac Sim console
+            # most users look at when the bridge silently refuses to load.
+            checker_output = grepexc.output.decode("utf-8", errors="replace") if grepexc.output else ""
+            carb.log_error(f"isaacsim.ros2.core check failed:\n{checker_output}")
             return False

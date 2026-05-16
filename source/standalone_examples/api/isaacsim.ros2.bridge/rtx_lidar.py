@@ -40,7 +40,7 @@ assets_root_path = get_assets_root_path()
 if assets_root_path is None:
     carb.log_error("Could not find Isaac Sim assets folder")
     simulation_app.close()
-    sys.exit()
+    sys.exit(1)
 
 simulation_app.update()
 # Loading the simple_room environment

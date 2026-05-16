@@ -121,7 +121,7 @@ class Ros2ClockGraph(MenuHelperWindow):
         stage = omni.usd.get_context().get_stage()
         og_prim = stage.GetPrimAtPath(self._og_path)
         if og_prim.IsValid() and og_prim.IsA(OmniGraphSchema.OmniGraph):
-            msg = self._og_path + "already exist. Delete the existing clock graph or change the graph path"
+            msg = self._og_path + " already exists. Delete the existing graph or change the graph path."
             post_notification(msg, status=NotificationStatus.WARNING)
             return False
         else:
@@ -339,7 +339,7 @@ class Ros2GenericPubGraph(MenuHelperWindow):
         stage = omni.usd.get_context().get_stage()
         og_prim = stage.GetPrimAtPath(self._og_path)
         if og_prim.IsValid() and og_prim.IsA(OmniGraphSchema.OmniGraph):
-            msg = self._og_path + "already exist. Delete the existing clock graph or change the graph path"
+            msg = self._og_path + " already exists. Delete the existing graph or change the graph path."
             post_notification(msg, status=NotificationStatus.WARNING)
             return False
         else:
@@ -417,7 +417,6 @@ class Ros2JointStatesGraph(MenuHelperWindow):
                 js_sub_node_name = Path(js_sub_node_path).name
             elif node_type == "isaacsim.core.nodes.IsaacArticulationController":
                 msg = "already has an articulation controller node, CREATING A NEW ARTICULATION NODE"
-                print(msg)
                 post_notification(msg, status=NotificationStatus.WARNING)
                 art_node = get_next_free_path(node_path, "")
                 art_node_name = Path(art_node).name
@@ -609,7 +608,7 @@ class Ros2JointStatesGraph(MenuHelperWindow):
             if og_prim.IsValid() and og_prim.IsA(OmniGraphSchema.OmniGraph):
                 pass
             else:
-                msg = self._og_path + "is not an existing graph, check the og path"
+                msg = self._og_path + " is not an existing graph, check the og path"
                 post_notification(msg, status=NotificationStatus.WARNING)
                 return False
 
@@ -1115,7 +1114,7 @@ class Ros2OdometryGraph(MenuHelperWindow):
             if og_prim.IsValid() and og_prim.IsA(OmniGraphSchema.OmniGraph):
                 pass
             else:
-                msg = self._og_path + "is not an existing graph, check the og path"
+                msg = self._og_path + " is not an existing graph, check the og path"
                 post_notification(msg, status=NotificationStatus.WARNING)
                 return False
 

@@ -40,14 +40,18 @@ class URDFImportFromROS2Node(omni.kit.commands.Command):
     def __init__(
         self,
         ros2_node_name: str = "robot_state_publisher",
-        import_config: URDFImporterConfig = URDFImporterConfig(),
+        import_config: typing.Optional[URDFImporterConfig] = None,
         dest_path: str = "",
         get_articulation_root: bool = False,
     ):
         self.urdf_importer = URDFImporter()
         self.ros2_node_name = ros2_node_name
         self.dest_path = dest_path
-        self.config = import_config
+        # Avoid the mutable-default-argument trap: a URDFImporterConfig() in the
+        # parameter list is evaluated once at class definition time and would be
+        # shared across every call that omits import_config. Subsequent commands
+        # would then see urdf_path / usd_path mutations from prior runs leak in.
+        self.config = import_config if import_config is not None else URDFImporterConfig()
         self.robot_definition = RobotDefinitionReader()
         self.robot_definition.description_received_fn = partial(self.on_description_received)
         self.urdf_path = None

@@ -48,7 +48,7 @@ assets_root_path = get_assets_root_path()
 if assets_root_path is None:
     carb.log_error("Could not find Isaac Sim assets folder")
     simulation_app.close()
-    sys.exit()
+    sys.exit(1)
 
 # Loading the simple_room environment
 stage.add_reference_to_stage(assets_root_path + BACKGROUND_USD_PATH, BACKGROUND_STAGE_PATH)

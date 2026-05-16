@@ -404,11 +404,14 @@ public:
             }
         }
 
-        // Check for changes in service names
-        std::string primsServiceName = std::string(db.inputs.primsServiceName());
-        std::string getAttributesServiceName = std::string(db.inputs.getAttributesServiceName());
-        std::string getAttributeServiceName = std::string(db.inputs.getAttributeServiceName());
-        std::string setAttributeServiceName = std::string(db.inputs.setAttributeServiceName());
+        // Check for changes in service names. Use const-ref aliases on the OG
+        // inputs and only copy into state on a real change; previously this did
+        // five std::string allocations per compute() tick whether anything
+        // changed or not.
+        const std::string& primsServiceName = db.inputs.primsServiceName();
+        const std::string& getAttributesServiceName = db.inputs.getAttributesServiceName();
+        const std::string& getAttributeServiceName = db.inputs.getAttributeServiceName();
+        const std::string& setAttributeServiceName = db.inputs.setAttributeServiceName();
         if (primsServiceName != state.m_getPrimsServiceName)
         {
             state.m_serviceGetPrimsUpdateNeeded = true;
@@ -429,7 +432,7 @@ public:
             state.m_serviceSetAttributeUpdateNeeded = true;
             state.m_setAttributeServiceName = setAttributeServiceName;
         }
-        std::string qosProfile = std::string(db.inputs.qosProfile());
+        const std::string& qosProfile = db.inputs.qosProfile();
         if (qosProfile != state.m_qosProfile)
         {
             state.m_serviceGetPrimsUpdateNeeded = true;
@@ -801,10 +804,15 @@ private:
             const pxr::UsdPrim targetPrim = stage->GetPrimAtPath(pxr::SdfPath(path));
             if (targetPrim.IsValid())
             {
-                if (targetPrim.HasAttribute(pxr::TfToken(attrName.c_str())))
+                // Construct the TfToken once and reuse for both queries. TfToken
+                // interning means each construction goes through a global lock;
+                // doing it twice per service call is wasteful given USD's
+                // attribute-name space is large.
+                const pxr::TfToken attrToken(attrName.c_str());
+                if (targetPrim.HasAttribute(attrToken))
                 {
                     // Get prim attribute
-                    auto attr = targetPrim.GetAttribute(pxr::TfToken(attrName.c_str()));
+                    auto attr = targetPrim.GetAttribute(attrToken);
                     auto jsonObj = valueTypeToJson(attr); // pxr::TfStringify(vtValue);
                     // Build message
                     value = jsonObj.dump();
@@ -883,9 +891,12 @@ private:
             const pxr::UsdPrim targetPrim = stage->GetPrimAtPath(pxr::SdfPath(path));
             if (targetPrim.IsValid())
             {
-                if (targetPrim.HasAttribute(pxr::TfToken(attrName.c_str())))
+                // See note in serviceGetAttributeCallback: construct the
+                // TfToken once and reuse for both queries.
+                const pxr::TfToken attrToken(attrName.c_str());
+                if (targetPrim.HasAttribute(attrToken))
                 {
-                    auto attr = targetPrim.GetAttribute(pxr::TfToken(attrName.c_str()));
+                    auto attr = targetPrim.GetAttribute(attrToken);
                     if (nlohmann::json::accept(attrValueAsString))
                     {
                         nlohmann::json jsonObj = nlohmann::json::parse(attrValueAsString);
@@ -1168,6 +1179,15 @@ private:
         case SdfDataType::eFrame4d:
         case SdfDataType::eMatrix4d:
         {
+            // Guard the outer array before indexing into it. nlohmann::json's
+            // operator[](size_t) on a null value silently mutates jsonObj into
+            // an array, and throws json::type_error on objects/strings/numbers
+            // -- an exception that would escape the service callback if the
+            // client sent a non-array matrix payload.
+            if (!jsonObj.is_array() || jsonObj.size() < 4)
+            {
+                return pxr::VtValue();
+            }
             auto value = pxr::GfMatrix4d();
             for (int i = 0; i < 4; ++i)
             {
@@ -1287,6 +1307,11 @@ private:
         }
         case SdfDataType::eMatrix2d:
         {
+            // See note in eMatrix4d case: validate outer shape before indexing.
+            if (!jsonObj.is_array() || jsonObj.size() < 2)
+            {
+                return pxr::VtValue();
+            }
             auto value = pxr::GfMatrix2d();
             for (int i = 0; i < 2; ++i)
             {
@@ -1309,6 +1334,11 @@ private:
         }
         case SdfDataType::eMatrix3d:
         {
+            // See note in eMatrix4d case: validate outer shape before indexing.
+            if (!jsonObj.is_array() || jsonObj.size() < 3)
+            {
+                return pxr::VtValue();
+            }
             auto value = pxr::GfMatrix3d();
             for (int i = 0; i < 3; ++i)
             {
@@ -1463,22 +1493,29 @@ private:
     template <typename DataType>
     pxr::VtArray<DataType> arrayTypeFromJson(const nlohmann::json& jsonObj, SdfDataType type, bool* status)
     {
-        *status = true;
         pxr::VtArray<DataType> array;
-        if (jsonObj.is_array())
+        // Reject anything that isn't a JSON array up front. Previously this
+        // returned an empty VtArray with status=true, which the caller wraps in
+        // a non-empty VtValue and reports as a successful set -- so calling
+        // set_attribute on an int[] attribute with the JSON literal "hello"
+        // would silently clear the array instead of failing the request.
+        if (!jsonObj.is_array())
         {
-            for (size_t i = 0; i < jsonObj.size(); ++i)
+            *status = false;
+            return array;
+        }
+        *status = true;
+        for (size_t i = 0; i < jsonObj.size(); ++i)
+        {
+            auto value = valueTypeFromJson(jsonObj.at(i), type);
+            if (value.IsEmpty())
             {
-                auto value = valueTypeFromJson(jsonObj.at(i), type);
-                if (value.IsEmpty())
-                {
-                    *status = false;
-                    break;
-                }
-                else
-                {
-                    array.push_back(value.Get<DataType>());
-                }
+                *status = false;
+                break;
+            }
+            else
+            {
+                array.push_back(value.Get<DataType>());
             }
         }
         return array;

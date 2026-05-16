@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import asyncio
+import concurrent.futures
 import os
 import threading
 
@@ -331,6 +332,14 @@ class ROS2ServiceManager:
             carb.log_error(f"Failed to register action server '{action_name}': {e}")
             return False
 
+    # Maximum time to wait for an async service/action callback to complete.
+    # Without this bound, a single hung callback blocks the rclpy executor
+    # thread indefinitely and silently breaks every other service on this
+    # node. Override on the manager instance if you have a legitimate
+    # long-running callback (typically the right answer is to redesign the
+    # callback to be non-blocking).
+    ASYNC_CALLBACK_TIMEOUT_SEC = 60.0
+
     def _wrap_async_callback(self, async_callback):
         """Wrap any async callback to work with ROS2 services and actions
 
@@ -346,7 +355,16 @@ class ROS2ServiceManager:
                 self.loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(self.loop)
             future = asyncio.run_coroutine_threadsafe(async_callback(*args, **kwargs), self.loop)
-            return future.result()
+            try:
+                return future.result(timeout=self.ASYNC_CALLBACK_TIMEOUT_SEC)
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                carb.log_error(
+                    f"Async ROS2 callback exceeded {self.ASYNC_CALLBACK_TIMEOUT_SEC}s timeout and was cancelled. "
+                    "The client will receive a service error. If this is expected, raise "
+                    "ROS2ServiceManager.ASYNC_CALLBACK_TIMEOUT_SEC on the manager instance."
+                )
+                raise
 
         return wrapper
 
@@ -838,11 +856,16 @@ class SimulationControl:
                 else:
                     carb.log_warn("usdrt stage not available for counting spawned entities, using 0 as count")
                 entity_name = f"SpawnedEntity_{spawned_count}"
-            elif not entity_name.startswith("/"):
-                # Name provided
-                # The stage will handle the proper path creation based on where this is added
+
+            # Normalize to an absolute USD path. Applies to every branch above:
+            # the user-supplied name path, the default-prim path, and the
+            # auto-generated SpawnedEntity_N path. Previously only the user-
+            # supplied branch added the leading slash, so auto-generated
+            # names were passed to stage.DefinePrim() / GetPrimAtPath() as
+            # relative paths, which silently misbehaved.
+            if not entity_name.startswith("/"):
                 entity_name = f"/{entity_name}"
-                carb.log_info(f"Using entity name as is: /{entity_name}")
+                carb.log_info(f"Normalized entity name to absolute path: {entity_name}")
 
             # Check if name already exists
             if stage.GetPrimAtPath(entity_name):
@@ -1056,14 +1079,8 @@ class SimulationControl:
 
             # Step through the requested number of frames
             for i in range(steps):
-
                 # Wait for the frame to process
                 await app.next_update_async()
-
-                # Set successful response
-                response.result.result = Result.RESULT_OK
-
-                response.result.error_message = f"Successfully stepped simulation by {steps} frames."
 
             # Pause the simulation when done
             self.timeline.pause()
@@ -1071,6 +1088,12 @@ class SimulationControl:
             # Ensure the pause takes effect
             await app.next_update_async()
             await app.next_update_async()
+
+            # Set the success result only after every step completed; otherwise
+            # an exception partway through would leave the response showing
+            # RESULT_OK / "Successfully stepped..." from the previous iteration.
+            response.result.result = Result.RESULT_OK
+            response.result.error_message = f"Successfully stepped simulation by {steps} frames."
 
         except Exception as e:
             # Ensure simulation is paused if an error occurs
@@ -1814,15 +1837,21 @@ class SimulationControl:
         try:
             from simulation_interfaces.msg import SimulatorFeatures
 
-            # Define the features supported by our implementation
+            # Define the features supported by our implementation. Keep this list
+            # in sync with what the handlers actually do; a feature flag here is
+            # a contract that clients will rely on for capability discovery.
+            #
+            # SIMULATION_RESET_SPAWNED is intentionally omitted: _handle_reset_simulation
+            # ignores request.scope and always performs a SCOPE_DEFAULT full reset,
+            # so advertising SCOPE_SPAWNED would mislead clients into expecting
+            # a partial reset they never get.
             features = [
                 SimulatorFeatures.SPAWNING,  # Supports SpawnEntity
                 SimulatorFeatures.DELETING,  # Supports DeleteEntity
                 SimulatorFeatures.ENTITY_STATE_GETTING,  # Supports GetEntityState
                 SimulatorFeatures.ENTITY_STATE_SETTING,  # Supports SetEntityState
                 SimulatorFeatures.ENTITY_INFO_GETTING,  # Supports GetEntityInfo
-                SimulatorFeatures.SIMULATION_RESET,  # Supports ResetSimulation
-                SimulatorFeatures.SIMULATION_RESET_SPAWNED,  # Supports SCOPE_SPAWNED reset
+                SimulatorFeatures.SIMULATION_RESET,  # Supports ResetSimulation (SCOPE_DEFAULT only)
                 SimulatorFeatures.SIMULATION_STATE_GETTING,  # Supports GetSimulationState
                 SimulatorFeatures.SIMULATION_STATE_SETTING,  # Supports SetSimulationState
                 SimulatorFeatures.SIMULATION_STATE_PAUSE,  # Supports pausing simulation

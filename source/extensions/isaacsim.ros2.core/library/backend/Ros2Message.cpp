@@ -17,6 +17,7 @@
 #include <pch/UsdPCH.h>
 // clang-format on
 #include "Ros2Impl.h"
+#include <carb/logging/Log.h>
 #include "isaacsim/core/includes/UsdUtilities.h"
 #include "pxr/usd/usdPhysics/joint.h"
 #include "sensor_msgs/image_encodings.hpp"
@@ -205,7 +206,7 @@ void Ros2ImuMessageImpl::writeAcceleration(bool covariance, const std::vector<do
     }
     if (!covariance && acceleration.size() < 3)
     {
-        fprintf(stderr, "[Ros2ImuMessage] Expected 3 values for acceleration, got %zu\n", acceleration.size());
+        CARB_LOG_WARN("[Ros2ImuMessage] Expected 3 values for acceleration, got %zu", acceleration.size());
         return;
     }
     sensor_msgs__msg__Imu* imuMsg = static_cast<sensor_msgs__msg__Imu*>(m_msg);
@@ -229,7 +230,7 @@ void Ros2ImuMessageImpl::writeVelocity(bool covariance, const std::vector<double
     }
     if (!covariance && velocity.size() < 3)
     {
-        fprintf(stderr, "[Ros2ImuMessage] Expected 3 values for velocity, got %zu\n", velocity.size());
+        CARB_LOG_WARN("[Ros2ImuMessage] Expected 3 values for velocity, got %zu", velocity.size());
         return;
     }
     sensor_msgs__msg__Imu* imuMsg = static_cast<sensor_msgs__msg__Imu*>(m_msg);
@@ -253,7 +254,7 @@ void Ros2ImuMessageImpl::writeOrientation(bool covariance, const std::vector<dou
     }
     if (!covariance && orientation.size() < 4)
     {
-        fprintf(stderr, "[Ros2ImuMessage] Expected 4 values for orientation, got %zu\n", orientation.size());
+        CARB_LOG_WARN("[Ros2ImuMessage] Expected 4 values for orientation, got %zu", orientation.size());
         return;
     }
     sensor_msgs__msg__Imu* imuMsg = static_cast<sensor_msgs__msg__Imu*>(m_msg);
@@ -321,13 +322,13 @@ void Ros2CameraInfoMessageImpl::writeIntrinsicMatrix(const double array[], const
     // Validate input parameters
     if (!array)
     {
-        fprintf(stderr, "[Ros2CameraInfoMessage] writeIntrinsicMatrix: input array is null\n");
+        CARB_LOG_WARN("[Ros2CameraInfoMessage] writeIntrinsicMatrix: input array is null");
         return;
     }
 
     if (arraySize != 9)
     {
-        fprintf(stderr, "[Ros2CameraInfoMessage] Invalid array size %zu, expected 9 for 3x3 matrix\n", arraySize);
+        CARB_LOG_WARN("[Ros2CameraInfoMessage] Invalid array size %zu, expected 9 for 3x3 matrix", arraySize);
         return;
     }
 
@@ -372,14 +373,13 @@ void Ros2CameraInfoMessageImpl::writeProjectionMatrix(const double array[], cons
     // Validate input parameters
     if (!array)
     {
-        fprintf(stderr, "[Ros2CameraInfoMessage] writeProjectionMatrix: input array is null\n");
+        CARB_LOG_WARN("[Ros2CameraInfoMessage] writeProjectionMatrix: input array is null");
         return;
     }
 
     if (arraySize != 12)
     {
-        fprintf(stderr,
-                "[Ros2CameraInfoMessage] writeProjectionMatrix: invalid array size %zu, expected 12 for 3x4 matrix\n",
+        CARB_LOG_WARN("[Ros2CameraInfoMessage] writeProjectionMatrix: invalid array size %zu, expected 12 for 3x4 matrix",
                 arraySize);
         return;
     }
@@ -400,14 +400,13 @@ void Ros2CameraInfoMessageImpl::writeRectificationMatrix(const double array[], c
     // Validate input parameters
     if (!array)
     {
-        fprintf(stderr, "[Ros2CameraInfoMessage] writeRectificationMatrix: input array is null\n");
+        CARB_LOG_WARN("[Ros2CameraInfoMessage] writeRectificationMatrix: input array is null");
         return;
     }
 
     if (arraySize != 9)
     {
-        fprintf(stderr,
-                "[Ros2CameraInfoMessage] writeRectificationMatrix: invalid array size %zu, expected 9 for 3x3 matrix\n",
+        CARB_LOG_WARN("[Ros2CameraInfoMessage] writeRectificationMatrix: invalid array size %zu, expected 9 for 3x3 matrix",
                 arraySize);
         return;
     }
@@ -478,7 +477,7 @@ void Ros2ImageMessageImpl::generateBuffer(const uint32_t height,
     }
     catch (std::exception& e)
     {
-        fprintf(stderr, "[Error] %s\n", e.what());
+        CARB_LOG_ERROR("[Error] %s", e.what());
         return;
     }
     int byteDepth = bitDepth / 8;
@@ -509,7 +508,7 @@ void Ros2ImageMessageImpl::generateBuffer(const uint32_t height,
             }
             else
             {
-                fprintf(stderr, "[Error] cudaMallocHost failed: %s\n", cudaGetErrorString(err));
+                CARB_LOG_ERROR("[Error] cudaMallocHost failed: %s", cudaGetErrorString(err));
                 m_buffer.resize(m_totalBytes);
                 imageMsg->data.data = m_totalBytes > 0 ? m_buffer.data() : nullptr;
             }
@@ -581,7 +580,7 @@ void Ros2CompressedImageMessageImpl::writeData(const uint8_t* data, size_t dataS
     }
     if (data == nullptr && dataSize > 0)
     {
-        fprintf(stderr, "[Ros2CompressedImageMessage] data is null for dataSize=%zu\n", dataSize);
+        CARB_LOG_WARN("[Ros2CompressedImageMessage] data is null for dataSize=%zu", dataSize);
         return;
     }
     sensor_msgs__msg__CompressedImage* compressedMsg = static_cast<sensor_msgs__msg__CompressedImage*>(m_msg);
@@ -679,7 +678,7 @@ void Ros2NitrosBridgeImageMessageImpl::generateBuffer(const uint32_t height,
     }
     catch (std::exception& e)
     {
-        fprintf(stderr, "Image encoding error: %s\n", e.what());
+        CARB_LOG_ERROR("Image encoding error: %s", e.what());
         return;
     }
     int byteDepth = bitDepth / 8;
@@ -767,7 +766,7 @@ void Ros2BoundingBox2DMessageImpl::writeBboxData(const void* bboxArray, const si
     }
     if (bboxArray == nullptr && numBoxes > 0)
     {
-        fprintf(stderr, "[Ros2BoundingBox2DMessage] bboxArray is null for numBoxes=%zu\n", numBoxes);
+        CARB_LOG_WARN("[Ros2BoundingBox2DMessage] bboxArray is null for numBoxes=%zu", numBoxes);
         return;
     }
     vision_msgs__msg__Detection2DArray* detectionMsg = static_cast<vision_msgs__msg__Detection2DArray*>(m_msg);
@@ -781,7 +780,7 @@ void Ros2BoundingBox2DMessageImpl::writeBboxData(const void* bboxArray, const si
             { return det.results; },
             "vision_msgs__msg__ObjectHypothesisWithPose__Sequence__fini"))
     {
-        fprintf(stderr, "[Ros2BoundingBox2DMessage] Failed to ensure detection sequence\n");
+        CARB_LOG_ERROR("[Ros2BoundingBox2DMessage] Failed to ensure detection sequence");
         return;
     }
 
@@ -804,7 +803,7 @@ void Ros2BoundingBox2DMessageImpl::writeBboxData(const void* bboxArray, const si
                                               "vision_msgs__msg__ObjectHypothesisWithPose__Sequence__init",
                                               "vision_msgs__msg__ObjectHypothesisWithPose__Sequence__fini"))
         {
-            fprintf(stderr, "[Ros2BoundingBox2DMessage] Warning: Failed to ensure results sequence for box %zu\n", i);
+            CARB_LOG_WARN("[Ros2BoundingBox2DMessage] Failed to ensure results sequence for box %zu", i);
             continue;
         }
 
@@ -867,7 +866,7 @@ void Ros2BoundingBox3DMessageImpl::writeBboxData(const void* bboxArray, size_t n
     }
     if (bboxArray == nullptr && numBoxes > 0)
     {
-        fprintf(stderr, "[Ros2BoundingBox3DMessage] bboxArray is null for numBoxes=%zu\n", numBoxes);
+        CARB_LOG_WARN("[Ros2BoundingBox3DMessage] bboxArray is null for numBoxes=%zu", numBoxes);
         return;
     }
     vision_msgs__msg__Detection3DArray* detectionMsg = static_cast<vision_msgs__msg__Detection3DArray*>(m_msg);
@@ -881,7 +880,7 @@ void Ros2BoundingBox3DMessageImpl::writeBboxData(const void* bboxArray, size_t n
             { return det.results; },
             "vision_msgs__msg__ObjectHypothesisWithPose__Sequence__fini"))
     {
-        fprintf(stderr, "[Ros2BoundingBox3DMessage] Failed to ensure detection sequence\n");
+        CARB_LOG_ERROR("[Ros2BoundingBox3DMessage] Failed to ensure detection sequence");
         return;
     }
     const Bbox3DData* bboxData = reinterpret_cast<const Bbox3DData*>(bboxArray);
@@ -919,7 +918,7 @@ void Ros2BoundingBox3DMessageImpl::writeBboxData(const void* bboxArray, size_t n
                                               "vision_msgs__msg__ObjectHypothesisWithPose__Sequence__init",
                                               "vision_msgs__msg__ObjectHypothesisWithPose__Sequence__fini"))
         {
-            fprintf(stderr, "[Ros2BoundingBox3DMessage] Warning: Failed to ensure results sequence for box %zu\n", i);
+            CARB_LOG_WARN("[Ros2BoundingBox3DMessage] Failed to ensure results sequence for box %zu", i);
             continue;
         }
 
@@ -1047,7 +1046,7 @@ void Ros2RawTfTreeMessageImpl::writeData(const double timeStamp,
     // Ensure capacity for a single transform and reuse if possible
     if (!ensureSeqSize(tfMsg->transforms, 1))
     {
-        fprintf(stderr, "[Ros2RawTfTreeMessage] Failed to ensure transform sequence\n");
+        CARB_LOG_ERROR("[Ros2RawTfTreeMessage] Failed to ensure transform sequence");
         return;
     }
 
@@ -1159,22 +1158,22 @@ void Ros2JointStateMessageImpl::writeData(const double& timeStamp,
     bool hasDofStates = true;
     if (!articulation->getDofPositions(&positionTensor))
     {
-        fprintf(stderr, "[Ros2JointStateMessage] Failed to get dof positions\n");
+        CARB_LOG_ERROR("[Ros2JointStateMessage] Failed to get dof positions");
         hasDofStates = false;
     }
     if (!articulation->getDofVelocities(&velocityTensor))
     {
-        fprintf(stderr, "[Ros2JointStateMessage] Failed to get dof velocities\n");
+        CARB_LOG_ERROR("[Ros2JointStateMessage] Failed to get dof velocities");
         hasDofStates = false;
     }
     if (!articulation->getDofProjectedJointForces(&effortTensor))
     {
-        fprintf(stderr, "[Ros2JointStateMessage] Failed to get dof efforts\n");
+        CARB_LOG_ERROR("[Ros2JointStateMessage] Failed to get dof efforts");
         hasDofStates = false;
     }
     if (!articulation->getDofTypes(&dofTypeTensor))
     {
-        fprintf(stderr, "[Ros2JointStateMessage] Failed to get dof types\n");
+        CARB_LOG_ERROR("[Ros2JointStateMessage] Failed to get dof types");
         hasDofStates = false;
     }
 
@@ -1182,7 +1181,7 @@ void Ros2JointStateMessageImpl::writeData(const double& timeStamp,
     if (!ensureSeqSize(jointStateMsg->name, numDofs) || !ensureSeqSize(jointStateMsg->position, numDofs) ||
         !ensureSeqSize(jointStateMsg->velocity, numDofs) || !ensureSeqSize(jointStateMsg->effort, numDofs))
     {
-        fprintf(stderr, "[Ros2JointStateMessage] Failed to ensure sequence capacities\n");
+        CARB_LOG_ERROR("[Ros2JointStateMessage] Failed to ensure sequence capacities");
         return;
     }
 
@@ -1250,7 +1249,7 @@ void Ros2JointStateMessageImpl::writeData(const double& timeStamp,
     if (!ensureSeqSize(jointStateMsg->name, numDofs) || !ensureSeqSize(jointStateMsg->position, numDofs) ||
         !ensureSeqSize(jointStateMsg->velocity, numDofs) || !ensureSeqSize(jointStateMsg->effort, numDofs))
     {
-        fprintf(stderr, "[Ros2JointStateMessage] Failed to ensure sequence capacities\n");
+        CARB_LOG_ERROR("[Ros2JointStateMessage] Failed to ensure sequence capacities");
         return;
     }
 
@@ -1422,7 +1421,7 @@ void Ros2PointCloudMessageImpl::generateBuffer(const double& timeStamp,
     // Ensure fields sequence has correct capacity and reuse if possible
     if (!ensureSeqSize(pointCloudMsg->fields, numFields))
     {
-        fprintf(stderr, "[Ros2PointCloudMessage] Failed to ensure fields sequence\n");
+        CARB_LOG_ERROR("[Ros2PointCloudMessage] Failed to ensure fields sequence");
         return;
     }
     // Assign mandatory fields (x, y, z)
@@ -1646,7 +1645,7 @@ void Ros2TfTreeMessageImpl::writeData(const double& timeStamp, std::vector<TfTra
     // Ensure capacity for transforms and reuse if possible
     if (!ensureSeqSize(tfMsg->transforms, transforms.size()))
     {
-        fprintf(stderr, "[Ros2TfTreeMessage] Failed to ensure transform sequence\n");
+        CARB_LOG_ERROR("[Ros2TfTreeMessage] Failed to ensure transform sequence");
         return;
     }
 
