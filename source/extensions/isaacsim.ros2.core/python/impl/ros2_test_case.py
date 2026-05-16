@@ -63,7 +63,7 @@ class ROS2TestCase(TimedAsyncTestCase):
 
             status, frames = await ViewportManager.wait_for_viewport_async()
             self.assertTrue(status, f"Viewport not ready after {frames} frames")
-        except:
+        except Exception:
             pass
 
     def create_node(self, node_name):
@@ -132,7 +132,7 @@ class ROS2TestCase(TimedAsyncTestCase):
             if (node, subscription) in self._ros2_subscribers:
                 self._ros2_subscribers.remove((node, subscription))
         except Exception as e:
-            print(f"Warning: Failed to destroy subscription: {e}")
+            carb.log_warn(f"Failed to destroy subscription: {e}")
 
     def destroy_publisher(self, node, publisher):
         """Manually destroy a publisher and remove it from tracking.
@@ -147,7 +147,7 @@ class ROS2TestCase(TimedAsyncTestCase):
             if (node, publisher) in self._ros2_publishers:
                 self._ros2_publishers.remove((node, publisher))
         except Exception as e:
-            print(f"Warning: Failed to destroy publisher: {e}")
+            carb.log_warn(f"Failed to destroy publisher: {e}")
 
     def start_async_spinning(self, node):
         """Start a background executor that continuously spins the node.
@@ -164,7 +164,7 @@ class ROS2TestCase(TimedAsyncTestCase):
         from rclpy.executors import MultiThreadedExecutor
 
         if node in self._ros2_executors:
-            print(f"Warning: node {node.get_name()} is already spinning, skipping")
+            carb.log_warn(f"node {node.get_name()} is already spinning, skipping")
             return
 
         self._ros2_callback_groups[node] = ReentrantCallbackGroup()
@@ -219,7 +219,7 @@ class ROS2TestCase(TimedAsyncTestCase):
         self._timeline.stop()
         await omni.kit.app.get_app().next_update_async()
         while omni.usd.get_context().get_stage_loading_status()[2] > 0:
-            print("tearDown, assets still loading, waiting to finish...")
+            carb.log_info("tearDown, assets still loading, waiting to finish...")
             await asyncio.sleep(1.0)
 
         # Clean up ROS2 resources in the correct order
@@ -229,7 +229,7 @@ class ROS2TestCase(TimedAsyncTestCase):
                 executor.shutdown()
                 thread.join(timeout=5.0)
             except Exception as e:
-                print(f"Warning: Failed to stop executor: {e}")
+                carb.log_warn(f"Failed to stop executor: {e}")
         self._ros2_executors.clear()
 
         # Then destroy publishers
@@ -237,21 +237,21 @@ class ROS2TestCase(TimedAsyncTestCase):
             try:
                 node.destroy_publisher(publisher)
             except Exception as e:
-                print(f"Warning: Failed to destroy publisher: {e}")
+                carb.log_warn(f"Failed to destroy publisher: {e}")
 
         # Then destroy subscribers
         for node, subscription in self._ros2_subscribers:
             try:
                 node.destroy_subscription(subscription)
             except Exception as e:
-                print(f"Warning: Failed to destroy subscription: {e}")
+                carb.log_warn(f"Failed to destroy subscription: {e}")
 
         # Finally destroy nodes
         for node in self._ros2_nodes:
             try:
                 node.destroy_node()
             except Exception as e:
-                print(f"Warning: Failed to destroy node: {e}")
+                carb.log_warn(f"Failed to destroy node: {e}")
 
         # Clear the tracking lists
         self._ros2_publishers.clear()
