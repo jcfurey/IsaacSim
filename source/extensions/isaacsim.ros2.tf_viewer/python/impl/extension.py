@@ -15,7 +15,6 @@
 
 import os
 import sys
-import threading
 import time
 
 import carb
@@ -71,17 +70,22 @@ class Extension(omni.ext.IExt):
             on_reset_callback=self._on_reset,
         )
 
-        self._running = False
         self._interface = None
         self._ros_version = ""
-
-        self._interface = None
+        # Update is driven by the kit app update event (main thread) instead of a worker
+        # thread so viewport/USD writes happen on the thread that owns them. Cancelling
+        # this subscription before tearing down viewport_scene also avoids the previous
+        # race where on_shutdown destroyed the scene while the worker was still drawing.
+        self._update_sub = None
+        self._last_update_time = 0.0
 
         # data
         self._frames = set(["World", "world", "map"])
 
     def on_shutdown(self):
-        self._running = False
+        # Cancel the update subscription first so no further callbacks run against
+        # half-destroyed state.
+        self._update_sub = None
         self._ui_builder.shutdown()
         # destroy viewport scene
         if self._viewport_scene:
@@ -105,14 +109,22 @@ class Extension(omni.ext.IExt):
             if module:
                 self._interface = module.acquire_transform_listener_interface()
                 self._interface.initialize(distro)
-            # start thread
-            threading.Thread(target=self._update_transforms).start()
-            # carb.log_info(f"Transform listener status: {self._interface.is_ready()}")
+            # Drop any prior subscription before creating a new one (e.g. visibility
+            # toggled on twice without an intervening off).
+            self._update_sub = None
+            self._last_update_time = 0.0
+            self._update_sub = (
+                omni.kit.app.get_app()
+                .get_update_event_stream()
+                .create_subscription_to_pop(self._on_update, name="isaacsim.ros2.tf_viewer.update")
+            )
         else:
             carb.log_info(
                 f"Release interface ({self._ros_version.upper()} | {distro} | {'cpp' if self._cpp else 'python'})"
             )
-            self._running = False
+            # Cancel callbacks before releasing the interface so _on_update cannot
+            # observe a half-released listener.
+            self._update_sub = None
             # release interface
             if module:
                 self._interface.finalize()
@@ -127,23 +139,24 @@ class Extension(omni.ext.IExt):
         if self._interface:
             self._interface.reset()
 
-    def _update_transforms(self):
-        self._running = True
-        while self._running:
-            if self._cpp:
-                self._interface.spin()
-            # get transforms
-            root_frame = self._ui_builder.root_frame
-            frames, transforms, relations = self._interface.get_transforms(root_frame)
-            # add root frame if not listed
-            if self._include_root_frame and root_frame not in transforms:
-                transforms[root_frame] = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
-            # update frames and ui
-            self._frames.update(frames)
-            self._ui_builder.update(self._frames)
-            # draw scene
-            self._viewport_scene.manipulator.update_transforms(transforms, relations)
-            time.sleep(1 / self._ui_builder.update_frequency)
-        # clear scene
+    def _on_update(self, _event):
+        if not self._interface:
+            return
+        # Throttle to the user-configured update frequency. Kit ticks at the renderer
+        # rate, which is typically higher than the TF refresh we want.
+        frequency = max(self._ui_builder.update_frequency, 1e-3)
+        now = time.monotonic()
+        if now - self._last_update_time < 1.0 / frequency:
+            return
+        self._last_update_time = now
+
+        if self._cpp:
+            self._interface.spin()
+        root_frame = self._ui_builder.root_frame
+        frames, transforms, relations = self._interface.get_transforms(root_frame)
+        if self._include_root_frame and root_frame not in transforms:
+            transforms[root_frame] = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+        self._frames.update(frames)
+        self._ui_builder.update(self._frames)
         if self._viewport_scene:
-            self._viewport_scene.manipulator.clear()
+            self._viewport_scene.manipulator.update_transforms(transforms, relations)
