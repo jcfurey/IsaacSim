@@ -62,10 +62,14 @@ public:
             }
         }
 
-        // Check for changes in message type
-        std::string messagePackage = std::string(db.inputs.messagePackage());
-        std::string messageSubfolder = std::string(db.inputs.messageSubfolder());
-        std::string messageName = std::string(db.inputs.messageName());
+        // Check for changes in message type. Compare against the cached value
+        // first; only copy when the input actually changes. The previous
+        // unconditional std::string(db.inputs.foo()) constructed three new
+        // strings on every compute() tick per subscriber, even when nothing
+        // had changed.
+        const std::string& messagePackage = db.inputs.messagePackage();
+        const std::string& messageSubfolder = db.inputs.messageSubfolder();
+        const std::string& messageName = db.inputs.messageName();
         if (messagePackage != state.m_messagePackage)
         {
             state.m_messageUpdateNeeded = true;
@@ -95,10 +99,11 @@ public:
             return false;
         }
 
-        // Check for changes in subscriber
-        std::string topicName = std::string(db.inputs.topicName());
+        // Check for changes in subscriber. Same change-then-copy pattern as
+        // above to avoid two more per-tick string allocations.
+        const std::string& topicName = db.inputs.topicName();
         uint64_t queueSize = db.inputs.queueSize();
-        std::string qosProfile = db.inputs.qosProfile();
+        const std::string& qosProfile = db.inputs.qosProfile();
         if (topicName != state.m_topicName)
         {
             state.m_subscriberUpdateNeeded = true;
