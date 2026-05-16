@@ -1,5 +1,11 @@
 #! /bin/sh
 
+# Resolve repo root from this script's location so the relative -f and context
+# args below work regardless of the caller's working directory.
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
+cd "$REPO_ROOT" || { echo "ERROR: Could not cd to repo root $REPO_ROOT"; exit 1; }
+
 # Default tag
 TAG="isaac-sim-docker:latest"
 CONTAINER_PLATFORM=linux/amd64
