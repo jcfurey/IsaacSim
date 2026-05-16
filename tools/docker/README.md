@@ -22,6 +22,7 @@ This directory contains scripts for building Docker images of Isaac Sim. The bui
   - [Retrieving the VM's public IP](#retrieving-the-vms-public-ip)
   - [Launching with the public IP](#launching-with-the-public-ip)
   - [Restricting access with firewall rules](#restricting-access-with-firewall-rules)
+- [ROS 2 integration](#ros-2-integration)
 - [Important Notes](#important-notes)
 - [Keyboard Shortcuts (Web Viewer)](#keyboard-shortcuts-web-viewer)
 - [Troubleshooting](#troubleshooting)
@@ -461,6 +462,68 @@ gcloud compute firewall-rules create allow-isaacsim \
 **Azure NSG:** Create inbound rules for the same ports restricted to your client IP.
 
 > **Never** use `0.0.0.0/0` (all traffic) for these ports in production. Doing so exposes an unauthenticated stream to anyone on the Internet.
+
+## ROS 2 integration
+
+The `isaacsim.ros2.bridge` extension ships **bundled ROS 2 runtime libraries** for `humble` and `jazzy` under `exts/isaacsim.ros2.core/<distro>/lib`. You do **not** need to install ROS 2 inside the container for the bridge to publish, subscribe, or call services.
+
+`runheadless.sh` and `runapp.sh` source `setup_ros_env.sh` on startup, which:
+
+- Auto-detects `ROS_DISTRO` from the container OS (`jazzy` on Ubuntu 24.04 / `noble`, `humble` on 22.04).
+- Adds the bundled distro libraries to `LD_LIBRARY_PATH`.
+- Defaults `RMW_IMPLEMENTATION` to `rmw_fastrtps_cpp`.
+
+The bridge is **disabled by default** — enable it from the Extensions UI or via `--enable isaacsim.ros2.bridge`.
+
+### Environment variables (Compose)
+
+The compose file passes these through to the container; override via shell or `.env`:
+
+
+| Variable                          | Default              | Description                                                                                       |
+| --------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------- |
+| **ROS_DISTRO**                    | auto                 | Force a specific bundled distro (`humble` or `jazzy`). Leave empty to auto-detect from the OS.    |
+| **RMW_IMPLEMENTATION**            | `rmw_fastrtps_cpp`   | DDS middleware. Only FastDDS is bundled; pointing at another RMW requires a host install.         |
+| **ROS_DOMAIN_ID**                 | `0`                  | Set to isolate this container from other ROS 2 graphs on the same network.                        |
+| **FASTRTPS_DEFAULT_PROFILES_FILE**| (unset)              | Path inside the container to a FastDDS XML profile (e.g. `/isaac-sim/fastdds_profile.xml`).       |
+
+### Discovery between container and host
+
+Because the compose file uses `network_mode: "host"`, DDS multicast discovery works the same as it would on the host — containerized Isaac Sim and host ROS 2 nodes will see each other as long as they share `ROS_DOMAIN_ID` and `RMW_IMPLEMENTATION`. Source your host's ROS 2 with `source /opt/ros/<distro>/setup.bash` and run `ros2 topic list` to verify.
+
+If you run multiple Isaac Sim containers on the same host, give each one its own `ROS_DOMAIN_ID` to prevent topic collisions.
+
+### Using a FastDDS XML profile
+
+Mount your profile via an override compose file (`tools/docker/docker-compose.ros2.yml`):
+
+```yaml
+services:
+  isaac-sim:
+    environment:
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/isaac-sim/fastdds_profile.xml
+    volumes:
+      - /abs/path/to/profile.xml:/isaac-sim/fastdds_profile.xml:ro
+```
+
+Bring the stack up with both files:
+
+```bash
+docker compose -p isim \
+  -f tools/docker/docker-compose.yml \
+  -f tools/docker/docker-compose.ros2.yml \
+  up -d
+```
+
+### Sourcing a host ROS 2 install (advanced)
+
+If you want to use `ros2 cli` tools or a non-bundled distro inside the container, bind-mount `/opt/ros` from the host and source it in the entrypoint. This is not the supported workflow — prefer running `ros2 cli` on the host and letting DDS bridge to the container via shared host networking.
+
+### Troubleshooting
+
+- **`ros2 topic list` from host shows no Isaac Sim topics:** check `ROS_DOMAIN_ID` matches on both sides, and that `RMW_IMPLEMENTATION` matches (host `rmw_fastrtps_cpp` vs container default). If the host is on `rmw_cyclonedds_cpp`, the container will not see it.
+- **Bridge fails to load with "cannot open shared object file":** confirm `setup_ros_env.sh` ran (it should — runheadless/runapp source it). Run `docker exec <container> bash -c 'echo $LD_LIBRARY_PATH'` and verify it contains `exts/isaacsim.ros2.core/<distro>/lib`.
+- **Topics work intermittently or DDS discovery is slow:** mount a tuned FastDDS profile (see above) and increase participant timeout values.
 
 ## Important Notes
 

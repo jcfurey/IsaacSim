@@ -35,6 +35,14 @@ services:
       - ISAACSIM_HOST=${ISAACSIM_HOST:-127.0.0.1}
       - ISAACSIM_SIGNAL_PORT=${ISAACSIM_SIGNAL_PORT:-49100}
       - ISAACSIM_STREAM_PORT=${ISAACSIM_STREAM_PORT:-47998}
+      # ROS 2 bridge (isaacsim.ros2.bridge): only consumed if the extension is enabled.
+      # ROS_DISTRO is auto-detected from the container OS by setup_ros_env.sh (jazzy on
+      # noble/24.04, humble on 22.04); override here to force a specific bundled distro.
+      - ROS_DISTRO=${ROS_DISTRO:-}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      # Optional FastDDS XML profile (set FASTRTPS_PROFILE on the host to mount it).
+      - FASTRTPS_DEFAULT_PROFILES_FILE=${FASTRTPS_DEFAULT_PROFILES_FILE:-}
     volumes:
       - ${ISAAC_SIM_DATA:-~/docker/isaac-sim}/cache/main:/isaac-sim/.cache:rw
       - ${ISAAC_SIM_DATA:-~/docker/isaac-sim}/cache/computecache:/isaac-sim/.nv/ComputeCache:rw
@@ -42,6 +50,10 @@ services:
       - ${ISAAC_SIM_DATA:-~/docker/isaac-sim}/config:/isaac-sim/.nvidia-omniverse/config:rw
       - ${ISAAC_SIM_DATA:-~/docker/isaac-sim}/data:/isaac-sim/.local/share/ov/data:rw
       - ${ISAAC_SIM_DATA:-~/docker/isaac-sim}/pkg:/isaac-sim/.local/share/ov/pkg:rw
+      # To use a custom FastDDS XML profile, add an override compose file with:
+      #   volumes: ["/abs/path/profile.xml:/isaac-sim/fastdds_profile.xml:ro"]
+      # and set FASTRTPS_DEFAULT_PROFILES_FILE=/isaac-sim/fastdds_profile.xml in the
+      # environment block above. See README "ROS 2 integration" for details.
     restart: unless-stopped
 
   web-viewer:
