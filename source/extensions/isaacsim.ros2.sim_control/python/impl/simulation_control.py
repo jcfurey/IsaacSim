@@ -856,11 +856,16 @@ class SimulationControl:
                 else:
                     carb.log_warn("usdrt stage not available for counting spawned entities, using 0 as count")
                 entity_name = f"SpawnedEntity_{spawned_count}"
-            elif not entity_name.startswith("/"):
-                # Name provided
-                # The stage will handle the proper path creation based on where this is added
+
+            # Normalize to an absolute USD path. Applies to every branch above:
+            # the user-supplied name path, the default-prim path, and the
+            # auto-generated SpawnedEntity_N path. Previously only the user-
+            # supplied branch added the leading slash, so auto-generated
+            # names were passed to stage.DefinePrim() / GetPrimAtPath() as
+            # relative paths, which silently misbehaved.
+            if not entity_name.startswith("/"):
                 entity_name = f"/{entity_name}"
-                carb.log_info(f"Using entity name as is: /{entity_name}")
+                carb.log_info(f"Normalized entity name to absolute path: {entity_name}")
 
             # Check if name already exists
             if stage.GetPrimAtPath(entity_name):
@@ -1832,15 +1837,21 @@ class SimulationControl:
         try:
             from simulation_interfaces.msg import SimulatorFeatures
 
-            # Define the features supported by our implementation
+            # Define the features supported by our implementation. Keep this list
+            # in sync with what the handlers actually do; a feature flag here is
+            # a contract that clients will rely on for capability discovery.
+            #
+            # SIMULATION_RESET_SPAWNED is intentionally omitted: _handle_reset_simulation
+            # ignores request.scope and always performs a SCOPE_DEFAULT full reset,
+            # so advertising SCOPE_SPAWNED would mislead clients into expecting
+            # a partial reset they never get.
             features = [
                 SimulatorFeatures.SPAWNING,  # Supports SpawnEntity
                 SimulatorFeatures.DELETING,  # Supports DeleteEntity
                 SimulatorFeatures.ENTITY_STATE_GETTING,  # Supports GetEntityState
                 SimulatorFeatures.ENTITY_STATE_SETTING,  # Supports SetEntityState
                 SimulatorFeatures.ENTITY_INFO_GETTING,  # Supports GetEntityInfo
-                SimulatorFeatures.SIMULATION_RESET,  # Supports ResetSimulation
-                SimulatorFeatures.SIMULATION_RESET_SPAWNED,  # Supports SCOPE_SPAWNED reset
+                SimulatorFeatures.SIMULATION_RESET,  # Supports ResetSimulation (SCOPE_DEFAULT only)
                 SimulatorFeatures.SIMULATION_STATE_GETTING,  # Supports GetSimulationState
                 SimulatorFeatures.SIMULATION_STATE_SETTING,  # Supports SetSimulationState
                 SimulatorFeatures.SIMULATION_STATE_PAUSE,  # Supports pausing simulation
