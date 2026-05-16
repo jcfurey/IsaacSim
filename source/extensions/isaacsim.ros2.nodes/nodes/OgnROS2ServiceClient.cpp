@@ -113,8 +113,10 @@ public:
             return false;
         }
 
-        std::string qosProfile = std::string(db.inputs.qosProfile());
-        std::string serviceName = std::string(db.inputs.serviceName());
+        // Const-ref aliases on the OG inputs; only copy on real change to avoid
+        // two per-tick string allocations per ServiceClient node.
+        const std::string& qosProfile = db.inputs.qosProfile();
+        const std::string& serviceName = db.inputs.serviceName();
         if (qosProfile != state.m_qosProfile)
         {
             state.m_qosProfile = qosProfile;

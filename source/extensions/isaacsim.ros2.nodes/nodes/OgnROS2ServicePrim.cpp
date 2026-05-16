@@ -404,11 +404,14 @@ public:
             }
         }
 
-        // Check for changes in service names
-        std::string primsServiceName = std::string(db.inputs.primsServiceName());
-        std::string getAttributesServiceName = std::string(db.inputs.getAttributesServiceName());
-        std::string getAttributeServiceName = std::string(db.inputs.getAttributeServiceName());
-        std::string setAttributeServiceName = std::string(db.inputs.setAttributeServiceName());
+        // Check for changes in service names. Use const-ref aliases on the OG
+        // inputs and only copy into state on a real change; previously this did
+        // five std::string allocations per compute() tick whether anything
+        // changed or not.
+        const std::string& primsServiceName = db.inputs.primsServiceName();
+        const std::string& getAttributesServiceName = db.inputs.getAttributesServiceName();
+        const std::string& getAttributeServiceName = db.inputs.getAttributeServiceName();
+        const std::string& setAttributeServiceName = db.inputs.setAttributeServiceName();
         if (primsServiceName != state.m_getPrimsServiceName)
         {
             state.m_serviceGetPrimsUpdateNeeded = true;
@@ -429,7 +432,7 @@ public:
             state.m_serviceSetAttributeUpdateNeeded = true;
             state.m_setAttributeServiceName = setAttributeServiceName;
         }
-        std::string qosProfile = std::string(db.inputs.qosProfile());
+        const std::string& qosProfile = db.inputs.qosProfile();
         if (qosProfile != state.m_qosProfile)
         {
             state.m_serviceGetPrimsUpdateNeeded = true;
