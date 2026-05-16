@@ -241,16 +241,20 @@ const std::map<std::string, Ros2QoSLivelinessPolicy> g_kRos2QoSLivelinessString2
  */
 inline static const bool jsonToRos2QoSProfile(Ros2QoSProfile& qos, const std::string& jsonString)
 {
-    // Define the required keys and their expected types
+    // Define the required keys and their expected types. Time-valued fields
+    // (deadline, lifespan, leaseDuration) accept any JSON number so that
+    // integer literals like {"deadline": 0} work alongside {"deadline": 0.0}.
+    // Using is_number_float() here rejected integer literals and was a frequent
+    // surprise when constructing QoS profile JSON by hand.
     std::map<std::string, std::function<bool(const nlohmann::json&)>> requiredKeys = {
         { "history", [](const nlohmann::json& json) { return json.is_string(); } },
         { "depth", [](const nlohmann::json& json) { return json.is_number_integer() && json.get<int>() >= 0; } },
         { "reliability", [](const nlohmann::json& json) { return json.is_string(); } },
         { "durability", [](const nlohmann::json& json) { return json.is_string(); } },
-        { "deadline", [](const nlohmann::json& json) { return json.is_number_float() && json.get<double>() >= 0; } },
-        { "lifespan", [](const nlohmann::json& json) { return json.is_number_float() && json.get<double>() >= 0; } },
+        { "deadline", [](const nlohmann::json& json) { return json.is_number() && json.get<double>() >= 0; } },
+        { "lifespan", [](const nlohmann::json& json) { return json.is_number() && json.get<double>() >= 0; } },
         { "liveliness", [](const nlohmann::json& json) { return json.is_string(); } },
-        { "leaseDuration", [](const nlohmann::json& json) { return json.is_number_float() && json.get<double>() >= 0; } }
+        { "leaseDuration", [](const nlohmann::json& json) { return json.is_number() && json.get<double>() >= 0; } }
     };
 
     // Parse the JSON string
