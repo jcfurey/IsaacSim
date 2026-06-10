@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2018-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2018-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""TF Viewer extension for visualizing ROS 2 TF frames."""
+
 import os
 import sys
 import time
@@ -26,7 +28,10 @@ from . import ui_builder, viewport_scene
 
 
 class Extension(omni.ext.IExt):
-    def on_startup(self, ext_id):
+    """Extension for the ROS 2 TF Viewer."""
+
+    def on_startup(self, ext_id: str) -> None:
+        """Initialize the extension."""
         self._extension_manager = omni.kit.app.get_app().get_extension_manager()
         ext_path = self._extension_manager.get_extension_path(ext_id)
 
@@ -80,9 +85,10 @@ class Extension(omni.ext.IExt):
         self._last_update_time = 0.0
 
         # data
-        self._frames = set(["World", "world", "map"])
+        self._frames = {"World", "world", "map"}
 
-    def on_shutdown(self):
+    def on_shutdown(self) -> None:
+        """Clean up resources when the extension shuts down."""
         # Cancel the update subscription first so no further callbacks run against
         # half-destroyed state.
         self._update_sub = None
@@ -93,7 +99,7 @@ class Extension(omni.ext.IExt):
             self._viewport_scene.destroy()
             self._viewport_scene = None
 
-    def _on_visibility_changed(self, visible):
+    def _on_visibility_changed(self, visible: bool) -> None:
         if self._extension_manager.is_extension_enabled("isaacsim.ros2.bridge"):
             self._ros_version = "ros2"
         else:
@@ -135,11 +141,11 @@ class Extension(omni.ext.IExt):
                 self._viewport_scene.manipulator.clear()
             carb.log_info("Transform listener released")
 
-    def _on_reset(self):
+    def _on_reset(self) -> None:
         if self._interface:
             self._interface.reset()
 
-    def _on_update(self, _event):
+    def _on_update(self, _event) -> None:
         if not self._interface:
             return
         # Throttle to the user-configured update frequency. Kit ticks at the renderer
