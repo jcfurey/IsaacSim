@@ -110,20 +110,12 @@ public:
             return false;
         }
 
-        // Const-ref aliases on the OG inputs; only copy on real change to avoid
+        // Copy the service inputs into state only on a real change to avoid
         // two per-tick string allocations per ServiceClient node.
-        const std::string& qosProfile = db.inputs.qosProfile();
-        const std::string& serviceName = db.inputs.serviceName();
-        if (qosProfile != state.m_qosProfile)
-        {
-            state.m_qosProfile = qosProfile;
-            state.m_serviceUpdateNeeded = true;
-        }
-        if (serviceName != state.m_serviceName)
-        {
-            state.m_serviceName = serviceName;
-            state.m_serviceUpdateNeeded = true;
-        }
+        state.m_serviceUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.qosProfile(), state.m_qosProfile);
+        state.m_serviceUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.serviceName(), state.m_serviceName);
 
         // ServiceServer was not valid, create a new one
         if (state.m_serviceUpdateNeeded)

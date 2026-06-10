@@ -18,6 +18,7 @@
 // clang-format on
 
 #include <isaacsim/ros2/core/Ros2Node.h>
+#include <isaacsim/ros2/nodes/Ros2OgnUtils.h>
 #include <nlohmann/json.hpp>
 #include <omni/fabric/FabricUSD.h>
 
@@ -404,42 +405,22 @@ public:
             }
         }
 
-        // Check for changes in service names. Use const-ref aliases on the OG
-        // inputs and only copy into state on a real change; previously this did
-        // five std::string allocations per compute() tick whether anything
-        // changed or not.
-        const std::string& primsServiceName = db.inputs.primsServiceName();
-        const std::string& getAttributesServiceName = db.inputs.getAttributesServiceName();
-        const std::string& getAttributeServiceName = db.inputs.getAttributeServiceName();
-        const std::string& setAttributeServiceName = db.inputs.setAttributeServiceName();
-        if (primsServiceName != state.m_getPrimsServiceName)
-        {
-            state.m_serviceGetPrimsUpdateNeeded = true;
-            state.m_getPrimsServiceName = primsServiceName;
-        }
-        if (getAttributesServiceName != state.m_getAttributesServiceName)
-        {
-            state.m_serviceGetAttributesUpdateNeeded = true;
-            state.m_getAttributesServiceName = getAttributesServiceName;
-        }
-        if (getAttributeServiceName != state.m_getAttributeServiceName)
-        {
-            state.m_serviceGetAttributeUpdateNeeded = true;
-            state.m_getAttributeServiceName = getAttributeServiceName;
-        }
-        if (setAttributeServiceName != state.m_setAttributeServiceName)
-        {
-            state.m_serviceSetAttributeUpdateNeeded = true;
-            state.m_setAttributeServiceName = setAttributeServiceName;
-        }
-        const std::string& qosProfile = db.inputs.qosProfile();
-        if (qosProfile != state.m_qosProfile)
+        // Check for changes in service names; copy into state only on a real
+        // change to avoid five per-tick string allocations per node.
+        state.m_serviceGetPrimsUpdateNeeded |= isaacsim::ros2::omnigraph_utils::updateCachedString(
+            db.inputs.primsServiceName(), state.m_getPrimsServiceName);
+        state.m_serviceGetAttributesUpdateNeeded |= isaacsim::ros2::omnigraph_utils::updateCachedString(
+            db.inputs.getAttributesServiceName(), state.m_getAttributesServiceName);
+        state.m_serviceGetAttributeUpdateNeeded |= isaacsim::ros2::omnigraph_utils::updateCachedString(
+            db.inputs.getAttributeServiceName(), state.m_getAttributeServiceName);
+        state.m_serviceSetAttributeUpdateNeeded |= isaacsim::ros2::omnigraph_utils::updateCachedString(
+            db.inputs.setAttributeServiceName(), state.m_setAttributeServiceName);
+        if (isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.qosProfile(), state.m_qosProfile))
         {
             state.m_serviceGetPrimsUpdateNeeded = true;
             state.m_serviceGetAttributesUpdateNeeded = true;
             state.m_serviceGetAttributeUpdateNeeded = true;
             state.m_serviceSetAttributeUpdateNeeded = true;
-            state.m_qosProfile = qosProfile;
         }
 
         // Update services
@@ -770,6 +751,22 @@ private:
         return true;
     }
 
+    /**
+     * @brief Looks up an attribute on a prim, constructing the TfToken only once.
+     * @details
+     * TfToken interning goes through a global lock, so the token is constructed
+     * once and reused for both the existence check and the lookup.
+     *
+     * @param[in] prim Prim to query.
+     * @param[in] attrName Attribute name.
+     * @return pxr::UsdAttribute Valid attribute if present, invalid otherwise.
+     */
+    static pxr::UsdAttribute getPrimAttribute(const pxr::UsdPrim& prim, const std::string& attrName)
+    {
+        const pxr::TfToken attrToken(attrName.c_str());
+        return prim.HasAttribute(attrToken) ? prim.GetAttribute(attrToken) : pxr::UsdAttribute();
+    }
+
     bool serviceGetAttributeCallback(OgnROS2ServicePrimDatabase& db)
     {
         auto& state = db.perInstanceState<OgnROS2ServicePrim>();
@@ -804,15 +801,9 @@ private:
             const pxr::UsdPrim targetPrim = stage->GetPrimAtPath(pxr::SdfPath(path));
             if (targetPrim.IsValid())
             {
-                // Construct the TfToken once and reuse for both queries. TfToken
-                // interning means each construction goes through a global lock;
-                // doing it twice per service call is wasteful given USD's
-                // attribute-name space is large.
-                const pxr::TfToken attrToken(attrName.c_str());
-                if (targetPrim.HasAttribute(attrToken))
+                const pxr::UsdAttribute attr = getPrimAttribute(targetPrim, attrName);
+                if (attr)
                 {
-                    // Get prim attribute
-                    auto attr = targetPrim.GetAttribute(attrToken);
                     auto jsonObj = valueTypeToJson(attr); // pxr::TfStringify(vtValue);
                     // Build message
                     value = jsonObj.dump();
@@ -891,12 +882,9 @@ private:
             const pxr::UsdPrim targetPrim = stage->GetPrimAtPath(pxr::SdfPath(path));
             if (targetPrim.IsValid())
             {
-                // See note in serviceGetAttributeCallback: construct the
-                // TfToken once and reuse for both queries.
-                const pxr::TfToken attrToken(attrName.c_str());
-                if (targetPrim.HasAttribute(attrToken))
+                const pxr::UsdAttribute attr = getPrimAttribute(targetPrim, attrName);
+                if (attr)
                 {
-                    auto attr = targetPrim.GetAttribute(attrToken);
                     if (nlohmann::json::accept(attrValueAsString))
                     {
                         nlohmann::json jsonObj = nlohmann::json::parse(attrValueAsString);

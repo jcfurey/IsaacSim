@@ -18,6 +18,7 @@
 // clang-format on
 
 #include <isaacsim/ros2/core/Ros2Node.h>
+#include <isaacsim/ros2/nodes/Ros2OgnUtils.h>
 
 #include <OgnROS2PublisherDatabase.h>
 
@@ -65,29 +66,14 @@ public:
             }
         }
 
-        // Check for changes in message type. Compare against the cached value
-        // first; only copy when the input actually changes. The previous
-        // unconditional std::string(db.inputs.foo()) constructed three new
-        // strings on every compute() tick per publisher, even when nothing
-        // had changed.
-        const std::string& messagePackage = db.inputs.messagePackage();
-        const std::string& messageSubfolder = db.inputs.messageSubfolder();
-        const std::string& messageName = db.inputs.messageName();
-        if (messagePackage != state.m_messagePackage)
-        {
-            state.m_messageUpdateNeeded = true;
-            state.m_messagePackage = messagePackage;
-        }
-        if (messageSubfolder != state.m_messageSubfolder)
-        {
-            state.m_messageUpdateNeeded = true;
-            state.m_messageSubfolder = messageSubfolder;
-        }
-        if (messageName != state.m_messageName)
-        {
-            state.m_messageUpdateNeeded = true;
-            state.m_messageName = messageName;
-        }
+        // Check for changes in message type; copy into state only on a real
+        // change to avoid three per-tick string allocations per publisher.
+        state.m_messageUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.messagePackage(), state.m_messagePackage);
+        state.m_messageUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.messageSubfolder(), state.m_messageSubfolder);
+        state.m_messageUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.messageName(), state.m_messageName);
         // Update message and node attributes
         if (state.m_messageUpdateNeeded || !state.m_message)
         {

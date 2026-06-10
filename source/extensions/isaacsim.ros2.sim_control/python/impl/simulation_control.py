@@ -113,6 +113,9 @@ class ROS2ServiceManager:
         self.loop = None
         # Single callback group for parallel execution of both services and actions
         self.callback_group = None
+        # Distinguishes an intentional shutdown from a callback exception
+        # escaping executor.spin() in _spin's restart loop.
+        self._shutdown_requested = False
 
     def initialize(self) -> None:
         """Initialize the ROS2 node for simulation control services.
@@ -154,6 +157,7 @@ class ROS2ServiceManager:
             nest_asyncio.apply(self.loop)
 
             # Start a separate thread for ROS2 spinning with the multithreaded executor
+            self._shutdown_requested = False
             self.executor_thread = threading.Thread(target=self._spin)
             self.executor_thread.daemon = True
             self.executor_thread.start()
@@ -180,6 +184,7 @@ class ROS2ServiceManager:
 
         import rclpy
 
+        self._shutdown_requested = True
         if self.executor:
             self.executor.shutdown()
 
@@ -435,15 +440,25 @@ class ROS2ServiceManager:
 
         This method runs the multithreaded executor which enables parallel
         callback execution. The executor will run until shutdown() is called.
+
+        An exception raised by a service/action callback (e.g. the
+        TimeoutError re-raised by _wrap_async_callback) propagates out of
+        executor.spin(). Without the restart loop a single failing callback
+        would permanently kill this thread and, with it, every service and
+        action server on the node.
         """
-        try:
-            self.executor.spin()
-        except KeyboardInterrupt:
-            pass
-        except Exception as e:
-            carb.log_error(f"Error in executor thread: {e}")
-        finally:
-            carb.log_info("ROS2 executor thread stopping")
+        while not self._shutdown_requested:
+            try:
+                self.executor.spin()
+                # spin() returned normally: the executor was shut down.
+                break
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                if self._shutdown_requested:
+                    break
+                carb.log_error(f"Error in executor thread: {e}; restarting executor spin")
+        carb.log_info("ROS2 executor thread stopping")
 
 
 class SimulationControl:
