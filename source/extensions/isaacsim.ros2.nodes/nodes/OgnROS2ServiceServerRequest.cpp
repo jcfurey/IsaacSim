@@ -122,7 +122,7 @@ public:
             }
 
             Ros2QoSProfile qos;
-            if (qosProfile != "")
+            if (!state.m_qosProfile.empty())
             {
                 if (!jsonToRos2QoSProfile(qos, state.m_qosProfile))
                 {

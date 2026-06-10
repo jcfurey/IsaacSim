@@ -437,7 +437,7 @@ public:
             // Create service
             CARB_LOG_INFO("OgnROS2ServicePrim: creating service: %s", fullServiceName.c_str());
             Ros2QoSProfile qos;
-            if (qosProfile != "")
+            if (!state.m_qosProfile.empty())
             {
                 if (!jsonToRos2QoSProfile(qos, state.m_qosProfile))
                 {
@@ -470,7 +470,7 @@ public:
             // Create service
             CARB_LOG_INFO("OgnROS2ServicePrim: creating service: %s", fullServiceName.c_str());
             Ros2QoSProfile qos;
-            if (qosProfile != "")
+            if (!state.m_qosProfile.empty())
             {
                 if (!jsonToRos2QoSProfile(qos, state.m_qosProfile))
                 {
@@ -504,7 +504,7 @@ public:
             CARB_LOG_INFO("OgnROS2ServicePrim: creating service: %s", fullServiceName.c_str());
 
             Ros2QoSProfile qos;
-            if (qosProfile != "")
+            if (!state.m_qosProfile.empty())
             {
                 if (!jsonToRos2QoSProfile(qos, state.m_qosProfile))
                 {
@@ -537,7 +537,7 @@ public:
             // Create service
             CARB_LOG_INFO("OgnROS2ServicePrim: creating service: %s", fullServiceName.c_str());
             Ros2QoSProfile qos;
-            if (qosProfile != "")
+            if (!state.m_qosProfile.empty())
             {
                 if (!jsonToRos2QoSProfile(qos, state.m_qosProfile))
                 {
