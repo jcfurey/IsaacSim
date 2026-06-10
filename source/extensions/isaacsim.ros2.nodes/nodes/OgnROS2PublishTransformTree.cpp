@@ -189,7 +189,7 @@ public:
         return state.publishTF(db, context);
     }
 
-    bool publishTF(OgnROS2PublishTransformTreeDatabase& db, const GraphContextObj& /*context*/)
+    bool publishTF(OgnROS2PublishTransformTreeDatabase& db, const GraphContextObj& context)
     {
         auto& state = db.perInstanceState<OgnROS2PublishTransformTree>();
 

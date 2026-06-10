@@ -136,7 +136,7 @@ public:
             }
 
             // Create publisher
-            std::string messageType = messagePackage + "/" + messageSubfolder + "/" + messageName;
+            std::string messageType = state.m_messagePackage + "/" + state.m_messageSubfolder + "/" + state.m_messageName;
             CARB_LOG_INFO("OgnROS2Publisher: creating publisher: %s (%s)", fullTopicName.c_str(), messageType.c_str());
             state.m_publisher = state.m_factory->createPublisher(
                 state.m_nodeHandle.get(), fullTopicName.c_str(), state.m_message->getTypeSupportHandle(), qos);
@@ -523,7 +523,7 @@ private:
     {
         auto db = OgnROS2PublisherDatabase(nodeObj);
         auto& state = db.perInstanceState<OgnROS2Publisher>();
-        std::string messageType = messagePackage + "/" + messageSubfolder + "/" + messageName;
+        std::string messageType = state.m_messagePackage + "/" + state.m_messageSubfolder + "/" + state.m_messageName;
         // Naive check on inputs
         if (messagePackage.empty() || messageSubfolder.empty() || messageName.empty())
         {

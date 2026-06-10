@@ -118,7 +118,7 @@ public:
                 return false;
             }
             // Create subscriber
-            std::string messageType = messagePackage + "/" + messageSubfolder + "/" + messageName;
+            std::string messageType = state.m_messagePackage + "/" + state.m_messageSubfolder + "/" + state.m_messageName;
             CARB_LOG_INFO("OgnROS2Subscriber: creating subscriber: %s (%s)", fullTopicName.c_str(), messageType.c_str());
 
             Ros2QoSProfile qos;
@@ -517,7 +517,7 @@ private:
     {
         auto db = OgnROS2SubscriberDatabase(nodeObj);
         auto& state = db.perInstanceState<OgnROS2Subscriber>();
-        std::string messageType = messagePackage + "/" + messageSubfolder + "/" + messageName;
+        std::string messageType = state.m_messagePackage + "/" + state.m_messageSubfolder + "/" + state.m_messageName;
         // Naive check on inputs
         if (messagePackage.empty() || messageSubfolder.empty() || messageName.empty())
         {
