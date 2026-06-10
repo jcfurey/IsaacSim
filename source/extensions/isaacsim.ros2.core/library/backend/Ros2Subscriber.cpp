@@ -109,9 +109,13 @@ bool Ros2SubscriberImpl::spin(void* msg)
     CARB_LOG_WARN_ONCE("Subscriber created, check topic name and message type if not active");
     if (rc != RCL_RET_OK)
     {
-        // This keeps printing an error if the publisher is not active.
-        // Ideally only want to notify user once, when the subscription is created
-        // RCL_WARN_MSG(spin, rcl_wait);
+        // RCL_RET_TIMEOUT is the normal "no message ready" result for this
+        // non-blocking wait (e.g. no publisher active yet), so stay quiet for
+        // it; anything else is a genuine wait-set failure worth surfacing.
+        if (rc != RCL_RET_TIMEOUT)
+        {
+            RCL_ERROR_MSG(spin, rcl_wait);
+        }
         return false;
     }
     if (m_waitSet.subscriptions[0])
