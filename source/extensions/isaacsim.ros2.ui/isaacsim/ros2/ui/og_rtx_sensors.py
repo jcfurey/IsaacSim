@@ -603,7 +603,7 @@ class Ros2CameraGraph(MenuHelperWindow):
             if og_prim.IsValid() and og_prim.IsA(OmniGraphSchema.OmniGraph):
                 pass
             else:
-                msg = self._og_path + "is not an existing graph, check the og path"
+                msg = self._og_path + " is not an existing graph, check the og path"
                 post_notification(msg, status=NotificationStatus.WARNING)
                 return False
 
@@ -1090,7 +1090,7 @@ class Ros2RtxLidarGraph(MenuHelperWindow):
             if og_prim.IsValid() and og_prim.IsA(OmniGraphSchema.OmniGraph):
                 pass
             else:
-                msg = self._og_path + "is not an existing graph, check the og path"
+                msg = self._og_path + " is not an existing graph, check the og path"
                 post_notification(msg, status=NotificationStatus.WARNING)
                 return False
 

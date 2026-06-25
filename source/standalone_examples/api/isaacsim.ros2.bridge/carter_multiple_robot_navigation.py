@@ -60,7 +60,7 @@ assets_root_path = get_assets_root_path()
 if assets_root_path is None:
     carb.log_error("Could not find Isaac Sim assets folder")
     simulation_app.close()
-    sys.exit()
+    sys.exit(1)
 
 usd_path = assets_root_path + ENV_USD_PATH
 omni.usd.get_context().open_stage(usd_path, None)

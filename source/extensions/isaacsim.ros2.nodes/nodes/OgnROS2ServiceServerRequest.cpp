@@ -103,18 +103,12 @@ public:
             state.m_messageUpdateNeeded = false;
         }
 
-        std::string qosProfile = std::string(db.inputs.qosProfile());
-        std::string serviceName = std::string(db.inputs.serviceName());
-        if (qosProfile != state.m_qosProfile)
-        {
-            state.m_qosProfile = qosProfile;
-            state.m_serviceUpdateNeeded = true;
-        }
-        if (serviceName != state.m_serviceName)
-        {
-            state.m_serviceName = serviceName;
-            state.m_serviceUpdateNeeded = true;
-        }
+        // Copy the service inputs into state only on a real change to avoid
+        // two per-tick string allocations per ServiceServerRequest node.
+        state.m_serviceUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.qosProfile(), state.m_qosProfile);
+        state.m_serviceUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.serviceName(), state.m_serviceName);
 
         if (!state.m_serviceServer || state.m_serviceUpdateNeeded)
         {
@@ -128,7 +122,7 @@ public:
             }
 
             Ros2QoSProfile qos;
-            if (qosProfile != "")
+            if (!state.m_qosProfile.empty())
             {
                 if (!jsonToRos2QoSProfile(qos, state.m_qosProfile))
                 {

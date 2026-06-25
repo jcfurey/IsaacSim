@@ -16,6 +16,7 @@
 #include "Ros2Impl.h"
 #include "rosidl_runtime_c/string_functions.h"
 
+#include <carb/logging/Log.h>
 #include <isaacsim/ros2/core/Ros2Macros.h>
 #include <rcl/rcl.h>
 
@@ -69,10 +70,14 @@ void Ros2MessageInterfaceImpl::writeRosHeader(const std::string& frameId,
     }
     else
     {
-        fprintf(stdout,
-                "[Warning] Frame %s Timestamp is invalid. Timestamp %" PRId64
-                " will be neglected for all published ROS messages\n",
-                frameId.c_str(), nanoseconds);
+        // CARB_LOG_WARN_ONCE so a continuously bad timestamp does not flood
+        // the log (and stdio) at the publish rate. Previously this fprintf'd
+        // to stdout on every call, which both hid the warning from users
+        // looking at the Isaac Sim console and added per-publish syscall
+        // cost at high topic rates.
+        CARB_LOG_WARN_ONCE("[Ros2Backend] Frame %s timestamp is invalid (%" PRId64
+                           "). Timestamp will be neglected for all published ROS messages.",
+                           frameId.c_str(), nanoseconds);
     }
 }
 

@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include <isaacsim/ros2/core/Ros2Node.h>
+#include <isaacsim/ros2/nodes/Ros2OgnUtils.h>
 
 #include <OgnROS2SubscriberDatabase.h>
 
@@ -62,25 +63,14 @@ public:
             }
         }
 
-        // Check for changes in message type
-        std::string messagePackage = std::string(db.inputs.messagePackage());
-        std::string messageSubfolder = std::string(db.inputs.messageSubfolder());
-        std::string messageName = std::string(db.inputs.messageName());
-        if (messagePackage != state.m_messagePackage)
-        {
-            state.m_messageUpdateNeeded = true;
-            state.m_messagePackage = messagePackage;
-        }
-        if (messageSubfolder != state.m_messageSubfolder)
-        {
-            state.m_messageUpdateNeeded = true;
-            state.m_messageSubfolder = messageSubfolder;
-        }
-        if (messageName != state.m_messageName)
-        {
-            state.m_messageUpdateNeeded = true;
-            state.m_messageName = messageName;
-        }
+        // Check for changes in message type; copy into state only on a real
+        // change to avoid three per-tick string allocations per subscriber.
+        state.m_messageUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.messagePackage(), state.m_messagePackage);
+        state.m_messageUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.messageSubfolder(), state.m_messageSubfolder);
+        state.m_messageUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.messageName(), state.m_messageName);
         // Update message and node attributes
         if (state.m_messageUpdateNeeded || !state.m_message)
         {
@@ -95,10 +85,11 @@ public:
             return false;
         }
 
-        // Check for changes in subscriber
-        std::string topicName = std::string(db.inputs.topicName());
+        // Check for changes in subscriber. Same change-then-copy pattern as
+        // above to avoid two more per-tick string allocations.
+        const std::string& topicName = db.inputs.topicName();
         uint64_t queueSize = db.inputs.queueSize();
-        std::string qosProfile = db.inputs.qosProfile();
+        const std::string& qosProfile = db.inputs.qosProfile();
         if (topicName != state.m_topicName)
         {
             state.m_subscriberUpdateNeeded = true;
@@ -127,7 +118,7 @@ public:
                 return false;
             }
             // Create subscriber
-            std::string messageType = messagePackage + "/" + messageSubfolder + "/" + messageName;
+            std::string messageType = state.m_messagePackage + "/" + state.m_messageSubfolder + "/" + state.m_messageName;
             CARB_LOG_INFO("OgnROS2Subscriber: creating subscriber: %s (%s)", fullTopicName.c_str(), messageType.c_str());
 
             Ros2QoSProfile qos;
@@ -526,7 +517,7 @@ private:
     {
         auto db = OgnROS2SubscriberDatabase(nodeObj);
         auto& state = db.perInstanceState<OgnROS2Subscriber>();
-        std::string messageType = messagePackage + "/" + messageSubfolder + "/" + messageName;
+        std::string messageType = state.m_messagePackage + "/" + state.m_messageSubfolder + "/" + state.m_messageName;
         // Naive check on inputs
         if (messagePackage.empty() || messageSubfolder.empty() || messageName.empty())
         {

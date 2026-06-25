@@ -58,7 +58,7 @@ assets_root_path = get_assets_root_path()
 if assets_root_path is None:
     carb.log_error("Could not find Isaac Sim assets folder")
     simulation_app.close()
-    sys.exit()
+    sys.exit(1)
 
 # Preparing stage
 ViewportManager.set_camera_view("/OmniverseKit_Persp", eye=np.array([1.2, 1.2, 0.8]), target=np.array([0, 0, 0.5]))

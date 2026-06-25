@@ -16,6 +16,7 @@
 """ROS 2 simulation control services and action servers."""
 
 import asyncio
+import concurrent.futures
 import os
 import threading
 
@@ -118,6 +119,9 @@ class ROS2ServiceManager:
         self.loop = None
         # Single callback group for parallel execution of both services and actions
         self.callback_group = None
+        # Distinguishes an intentional shutdown from a callback exception
+        # escaping executor.spin() in _spin's restart loop.
+        self._shutdown_requested = False
 
     def initialize(self) -> None:
         """Initialize the ROS2 node for simulation control services.
@@ -159,6 +163,7 @@ class ROS2ServiceManager:
             nest_asyncio.apply(self.loop)
 
             # Start a separate thread for ROS2 spinning with the multithreaded executor
+            self._shutdown_requested = False
             self.executor_thread = threading.Thread(target=self._spin)
             self.executor_thread.daemon = True
             self.executor_thread.start()
@@ -185,6 +190,7 @@ class ROS2ServiceManager:
 
         import rclpy
 
+        self._shutdown_requested = True
         if self.executor:
             self.executor.shutdown()
 
@@ -349,6 +355,14 @@ class ROS2ServiceManager:
             carb.log_error(f"Failed to register action server '{action_name}': {e}")
             return False
 
+    # Maximum time to wait for an async service/action callback to complete.
+    # Without this bound, a single hung callback blocks the rclpy executor
+    # thread indefinitely and silently breaks every other service on this
+    # node. Override on the manager instance if you have a legitimate
+    # long-running callback (typically the right answer is to redesign the
+    # callback to be non-blocking).
+    ASYNC_CALLBACK_TIMEOUT_SEC = 60.0
+
     def _wrap_async_callback(self, async_callback: callable) -> callable:
         """Wrap any async callback to work with ROS2 services and actions.
 
@@ -365,7 +379,16 @@ class ROS2ServiceManager:
                 self.loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(self.loop)
             future = asyncio.run_coroutine_threadsafe(async_callback(*args, **kwargs), self.loop)
-            return future.result()
+            try:
+                return future.result(timeout=self.ASYNC_CALLBACK_TIMEOUT_SEC)
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                carb.log_error(
+                    f"Async ROS2 callback exceeded {self.ASYNC_CALLBACK_TIMEOUT_SEC}s timeout and was cancelled. "
+                    "The client will receive a service error. If this is expected, raise "
+                    "ROS2ServiceManager.ASYNC_CALLBACK_TIMEOUT_SEC on the manager instance."
+                )
+                raise
 
         return wrapper
 
@@ -423,15 +446,25 @@ class ROS2ServiceManager:
 
         This method runs the multithreaded executor which enables parallel
         callback execution. The executor will run until shutdown() is called.
+
+        An exception raised by a service/action callback (e.g. the
+        TimeoutError re-raised by _wrap_async_callback) propagates out of
+        executor.spin(). Without the restart loop a single failing callback
+        would permanently kill this thread and, with it, every service and
+        action server on the node.
         """
-        try:
-            self.executor.spin()
-        except KeyboardInterrupt:
-            pass
-        except Exception as e:
-            carb.log_error(f"Error in executor thread: {e}")
-        finally:
-            carb.log_info("ROS2 executor thread stopping")
+        while not self._shutdown_requested:
+            try:
+                self.executor.spin()
+                # spin() returned normally: the executor was shut down.
+                break
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                if self._shutdown_requested:
+                    break
+                carb.log_error(f"Error in executor thread: {e}; restarting executor spin")
+        carb.log_info("ROS2 executor thread stopping")
 
 
 class SimulationControl:
@@ -928,9 +961,16 @@ class SimulationControl:
             else:
                 carb.log_warn("usdrt stage not available for counting spawned entities, using 0 as count")
             entity_name = f"SpawnedEntity_{spawned_count}"
-        elif not entity_name.startswith("/"):
+
+        # Normalize to an absolute USD path. Applies to every branch above:
+        # the user-supplied name path, the default-prim path, and the
+        # auto-generated SpawnedEntity_N path. Previously only the user-
+        # supplied branch added the leading slash, so auto-generated
+        # names were passed to stage.DefinePrim() / GetPrimAtPath() as
+        # relative paths, which silently misbehaved.
+        if not entity_name.startswith("/"):
             entity_name = f"/{entity_name}"
-            carb.log_info(f"Using entity name as is: {entity_name}")
+            carb.log_info(f"Normalized entity name to absolute path: {entity_name}")
 
         # Enforce name uniqueness
         if prim_utils.get_prim_at_path(entity_name).IsValid():
@@ -1329,14 +1369,8 @@ class SimulationControl:
 
             # Step through the requested number of frames
             for i in range(steps):
-
                 # Wait for the frame to process
                 await app.next_update_async()
-
-                # Set successful response
-                response.result.result = Result.RESULT_OK
-
-                response.result.error_message = f"Successfully stepped simulation by {steps} frames."
 
             # Pause the simulation when done
             self.timeline.pause()
@@ -1344,6 +1378,12 @@ class SimulationControl:
             # Ensure the pause takes effect
             await app.next_update_async()
             await app.next_update_async()
+
+            # Set the success result only after every step completed; otherwise
+            # an exception partway through would leave the response showing
+            # RESULT_OK / "Successfully stepped..." from the previous iteration.
+            response.result.result = Result.RESULT_OK
+            response.result.error_message = f"Successfully stepped simulation by {steps} frames."
 
         except Exception as e:
             # Ensure simulation is paused if an error occurs
@@ -2093,6 +2133,11 @@ class SimulationControl:
             # Resolve via getattr so older simulation_interfaces releases
             # advertise the subset they define instead of crashing on a
             # missing constant.
+            #
+            # SIMULATION_RESET_SPAWNED is intentionally omitted: _handle_reset_simulation
+            # ignores request.scope and always performs a SCOPE_DEFAULT full reset,
+            # so advertising SCOPE_SPAWNED would mislead clients into expecting
+            # a partial reset they never get.
             feature_names = [
                 "SPAWNING",
                 "DELETING",
@@ -2103,7 +2148,6 @@ class SimulationControl:
                 "ENTITY_INFO_GETTING",
                 "SPAWNABLES",
                 "SIMULATION_RESET",
-                "SIMULATION_RESET_SPAWNED",
                 "SIMULATION_STATE_GETTING",
                 "SIMULATION_STATE_SETTING",
                 "SIMULATION_STATE_PAUSE",

@@ -83,10 +83,15 @@ class RobotDescription:
 
         self.urdf_description = urdf_description
         self._last_urdf_path = os.path.normpath(out_path)
+        # package_found reflects whether any package:// URL in the URDF resolved
+        # to a filesystem path, not whether the ROS node was found. The previous
+        # status text ("ROS node found / not found") misled users into thinking
+        # the read had failed when in fact the URDF just had no package:// refs
+        # or had refs to packages not on AMENT_PREFIX_PATH.
         if package_found:
-            self._set_status("ROS package paths resolved")
+            self._set_status("URDF received, package URLs resolved")
         else:
-            self._set_status("ROS package paths could not be resolved", color=0xFF0000FF)
+            self._set_status("URDF received; some package:// URLs not resolved", color=0xFFCCAA00)
 
         def _enable_ui() -> None:
             self._option_widget.set_refresh_enabled(True)

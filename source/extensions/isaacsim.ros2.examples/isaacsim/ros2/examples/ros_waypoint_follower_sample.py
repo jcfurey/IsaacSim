@@ -61,7 +61,7 @@ class WaypointFollower(BaseResetNode):
         try:
             rclpy.init()
             self._navigator = BasicNavigator()
-        except:
+        except Exception:
             pass
         self.initialized = True
 
@@ -135,7 +135,7 @@ class WaypointFollower(BaseResetNode):
             elif result == TaskResult.FAILED:
                 post_notification("Goal failed!", status=NotificationStatus.WARNING)
                 self._navigator.get_logger().info("Goal canceled")
-        except:
+        except Exception:
             pass
 
     # Overriding a function from BaseResetNode.
@@ -229,7 +229,7 @@ class Patrolling(BaseResetNode):
         try:
             rclpy.init()
             self._navigator = BasicNavigator()
-        except:
+        except Exception:
             pass
         self.initialized = True
 
@@ -301,7 +301,7 @@ class Patrolling(BaseResetNode):
                     post_notification(f'Round {self._counter} is either Failed or Cancelled!', status=NotificationStatus.WARNING)
                     self._navigator.get_logger().info(f'Round {self._counter} is completed')
                     break
-            except:
+            except Exception:
                 pass
 
     # Overriding a function from BaseResetNode.

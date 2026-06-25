@@ -91,41 +91,43 @@ bool Ros2SubscriberImpl::spin(void* msg)
         }
         m_waitSetInitialized = true;
     }
-    else
-    {
-        rcl_ret_t rc = rcl_wait_set_clear(&m_waitSet);
-        if (rc != RCL_RET_OK)
-        {
-            RCL_ERROR_MSG(spin, rcl_wait_set_clear);
-            return false;
-        }
 
-        rc = rcl_wait_set_add_subscription(&m_waitSet, m_subscription.get(), nullptr);
-        if (rc != RCL_RET_OK)
+    rcl_ret_t rc = rcl_wait_set_clear(&m_waitSet);
+    if (rc != RCL_RET_OK)
+    {
+        RCL_ERROR_MSG(spin, rcl_wait_set_clear);
+        return false;
+    }
+
+    rc = rcl_wait_set_add_subscription(&m_waitSet, m_subscription.get(), nullptr);
+    if (rc != RCL_RET_OK)
+    {
+        RCL_ERROR_MSG(spin, rcl_wait_set_add_subscription);
+        return false;
+    }
+    rc = rcl_wait(&m_waitSet, 0);
+    CARB_LOG_WARN_ONCE("Subscriber created, check topic name and message type if not active");
+    if (rc != RCL_RET_OK)
+    {
+        // RCL_RET_TIMEOUT is the normal "no message ready" result for this
+        // non-blocking wait (e.g. no publisher active yet), so stay quiet for
+        // it; anything else is a genuine wait-set failure worth surfacing.
+        if (rc != RCL_RET_TIMEOUT)
         {
-            RCL_ERROR_MSG(spin, rcl_wait_set_add_subscription);
+            RCL_ERROR_MSG(spin, rcl_wait);
+        }
+        return false;
+    }
+    if (m_waitSet.subscriptions[0])
+    {
+        rmw_message_info_t messageInfo;
+        rcl_ret_t ret = rcl_take(m_subscription.get(), msg, &messageInfo, nullptr);
+        if (ret != RCL_RET_OK)
+        {
+            RCL_ERROR_MSG(spin, rcl_take);
             return false;
         }
-        rc = rcl_wait(&m_waitSet, 0);
-        CARB_LOG_WARN_ONCE("Subscriber created, check topic name and message type if not active");
-        if (rc != RCL_RET_OK)
-        {
-            // This keeps printing an error if the publisher is not active.
-            // Ideally only want to notify user once, when the subscription is created
-            // RCL_WARN_MSG(spin, rcl_wait);
-            return false;
-        }
-        if (m_waitSet.subscriptions[0])
-        {
-            rmw_message_info_t messageInfo;
-            rcl_ret_t ret = rcl_take(m_subscription.get(), msg, &messageInfo, nullptr);
-            if (ret != RCL_RET_OK)
-            {
-                RCL_ERROR_MSG(spin, rcl_take);
-                return false;
-            }
-            return true;
-        }
+        return true;
     }
     return false;
 }

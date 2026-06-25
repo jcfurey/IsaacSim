@@ -62,9 +62,12 @@ ENV OMNICLIENT_HUB_EXE=/usr/local/bin/hub
 # Add symlink
 RUN ln -s exts/isaacsim.examples.interactive/isaacsim/examples/interactive extension_examples
 
-# Update .bashrc
+# Update .bashrc: aliases plus ROS 2 env setup (LD_LIBRARY_PATH for the bundled
+# distro libs, RMW_IMPLEMENTATION) so interactive shells launched via run_docker.sh
+# match what runheadless.sh / runapp.sh provide.
 RUN echo 'alias runapp=/isaac-sim/runapp.sh' >> ~/.bashrc && \
-    echo 'alias runheadless=/isaac-sim/runheadless.sh' >> ~/.bashrc
+    echo 'alias runheadless=/isaac-sim/runheadless.sh' >> ~/.bashrc && \
+    echo '[ -f /isaac-sim/setup_ros_env.sh ] && . /isaac-sim/setup_ros_env.sh' >> ~/.bashrc
 
 # Health check: consider ready when AppReady appears in the Isaac Sim log (Kit/<app>/<version>/kit_*.log)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \

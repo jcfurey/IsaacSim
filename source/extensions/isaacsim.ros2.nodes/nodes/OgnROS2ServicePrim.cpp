@@ -18,6 +18,7 @@
 // clang-format on
 
 #include <isaacsim/ros2/core/Ros2Node.h>
+#include <isaacsim/ros2/nodes/Ros2OgnUtils.h>
 #include <nlohmann/json.hpp>
 #include <omni/fabric/FabricUSD.h>
 
@@ -404,39 +405,22 @@ public:
             }
         }
 
-        // Check for changes in service names
-        std::string primsServiceName = std::string(db.inputs.primsServiceName());
-        std::string getAttributesServiceName = std::string(db.inputs.getAttributesServiceName());
-        std::string getAttributeServiceName = std::string(db.inputs.getAttributeServiceName());
-        std::string setAttributeServiceName = std::string(db.inputs.setAttributeServiceName());
-        if (primsServiceName != state.m_getPrimsServiceName)
-        {
-            state.m_serviceGetPrimsUpdateNeeded = true;
-            state.m_getPrimsServiceName = primsServiceName;
-        }
-        if (getAttributesServiceName != state.m_getAttributesServiceName)
-        {
-            state.m_serviceGetAttributesUpdateNeeded = true;
-            state.m_getAttributesServiceName = getAttributesServiceName;
-        }
-        if (getAttributeServiceName != state.m_getAttributeServiceName)
-        {
-            state.m_serviceGetAttributeUpdateNeeded = true;
-            state.m_getAttributeServiceName = getAttributeServiceName;
-        }
-        if (setAttributeServiceName != state.m_setAttributeServiceName)
-        {
-            state.m_serviceSetAttributeUpdateNeeded = true;
-            state.m_setAttributeServiceName = setAttributeServiceName;
-        }
-        std::string qosProfile = std::string(db.inputs.qosProfile());
-        if (qosProfile != state.m_qosProfile)
+        // Check for changes in service names; copy into state only on a real
+        // change to avoid five per-tick string allocations per node.
+        state.m_serviceGetPrimsUpdateNeeded |= isaacsim::ros2::omnigraph_utils::updateCachedString(
+            db.inputs.primsServiceName(), state.m_getPrimsServiceName);
+        state.m_serviceGetAttributesUpdateNeeded |= isaacsim::ros2::omnigraph_utils::updateCachedString(
+            db.inputs.getAttributesServiceName(), state.m_getAttributesServiceName);
+        state.m_serviceGetAttributeUpdateNeeded |= isaacsim::ros2::omnigraph_utils::updateCachedString(
+            db.inputs.getAttributeServiceName(), state.m_getAttributeServiceName);
+        state.m_serviceSetAttributeUpdateNeeded |= isaacsim::ros2::omnigraph_utils::updateCachedString(
+            db.inputs.setAttributeServiceName(), state.m_setAttributeServiceName);
+        if (isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.qosProfile(), state.m_qosProfile))
         {
             state.m_serviceGetPrimsUpdateNeeded = true;
             state.m_serviceGetAttributesUpdateNeeded = true;
             state.m_serviceGetAttributeUpdateNeeded = true;
             state.m_serviceSetAttributeUpdateNeeded = true;
-            state.m_qosProfile = qosProfile;
         }
 
         // Update services
@@ -453,7 +437,7 @@ public:
             // Create service
             CARB_LOG_INFO("OgnROS2ServicePrim: creating service: %s", fullServiceName.c_str());
             Ros2QoSProfile qos;
-            if (qosProfile != "")
+            if (!state.m_qosProfile.empty())
             {
                 if (!jsonToRos2QoSProfile(qos, state.m_qosProfile))
                 {
@@ -486,7 +470,7 @@ public:
             // Create service
             CARB_LOG_INFO("OgnROS2ServicePrim: creating service: %s", fullServiceName.c_str());
             Ros2QoSProfile qos;
-            if (qosProfile != "")
+            if (!state.m_qosProfile.empty())
             {
                 if (!jsonToRos2QoSProfile(qos, state.m_qosProfile))
                 {
@@ -520,7 +504,7 @@ public:
             CARB_LOG_INFO("OgnROS2ServicePrim: creating service: %s", fullServiceName.c_str());
 
             Ros2QoSProfile qos;
-            if (qosProfile != "")
+            if (!state.m_qosProfile.empty())
             {
                 if (!jsonToRos2QoSProfile(qos, state.m_qosProfile))
                 {
@@ -553,7 +537,7 @@ public:
             // Create service
             CARB_LOG_INFO("OgnROS2ServicePrim: creating service: %s", fullServiceName.c_str());
             Ros2QoSProfile qos;
-            if (qosProfile != "")
+            if (!state.m_qosProfile.empty())
             {
                 if (!jsonToRos2QoSProfile(qos, state.m_qosProfile))
                 {
@@ -767,6 +751,22 @@ private:
         return true;
     }
 
+    /**
+     * @brief Looks up an attribute on a prim, constructing the TfToken only once.
+     * @details
+     * TfToken interning goes through a global lock, so the token is constructed
+     * once and reused for both the existence check and the lookup.
+     *
+     * @param[in] prim Prim to query.
+     * @param[in] attrName Attribute name.
+     * @return pxr::UsdAttribute Valid attribute if present, invalid otherwise.
+     */
+    static pxr::UsdAttribute getPrimAttribute(const pxr::UsdPrim& prim, const std::string& attrName)
+    {
+        const pxr::TfToken attrToken(attrName.c_str());
+        return prim.HasAttribute(attrToken) ? prim.GetAttribute(attrToken) : pxr::UsdAttribute();
+    }
+
     bool serviceGetAttributeCallback(OgnROS2ServicePrimDatabase& db)
     {
         auto& state = db.perInstanceState<OgnROS2ServicePrim>();
@@ -801,10 +801,9 @@ private:
             const pxr::UsdPrim targetPrim = stage->GetPrimAtPath(pxr::SdfPath(path));
             if (targetPrim.IsValid())
             {
-                if (targetPrim.HasAttribute(pxr::TfToken(attrName.c_str())))
+                const pxr::UsdAttribute attr = getPrimAttribute(targetPrim, attrName);
+                if (attr)
                 {
-                    // Get prim attribute
-                    auto attr = targetPrim.GetAttribute(pxr::TfToken(attrName.c_str()));
                     auto jsonObj = valueTypeToJson(attr); // pxr::TfStringify(vtValue);
                     // Build message
                     value = jsonObj.dump();
@@ -883,9 +882,9 @@ private:
             const pxr::UsdPrim targetPrim = stage->GetPrimAtPath(pxr::SdfPath(path));
             if (targetPrim.IsValid())
             {
-                if (targetPrim.HasAttribute(pxr::TfToken(attrName.c_str())))
+                const pxr::UsdAttribute attr = getPrimAttribute(targetPrim, attrName);
+                if (attr)
                 {
-                    auto attr = targetPrim.GetAttribute(pxr::TfToken(attrName.c_str()));
                     if (nlohmann::json::accept(attrValueAsString))
                     {
                         nlohmann::json jsonObj = nlohmann::json::parse(attrValueAsString);
@@ -1168,6 +1167,15 @@ private:
         case SdfDataType::eFrame4d:
         case SdfDataType::eMatrix4d:
         {
+            // Guard the outer array before indexing into it. nlohmann::json's
+            // operator[](size_t) on a null value silently mutates jsonObj into
+            // an array, and throws json::type_error on objects/strings/numbers
+            // -- an exception that would escape the service callback if the
+            // client sent a non-array matrix payload.
+            if (!jsonObj.is_array() || jsonObj.size() < 4)
+            {
+                return pxr::VtValue();
+            }
             auto value = pxr::GfMatrix4d();
             for (int i = 0; i < 4; ++i)
             {
@@ -1287,6 +1295,11 @@ private:
         }
         case SdfDataType::eMatrix2d:
         {
+            // See note in eMatrix4d case: validate outer shape before indexing.
+            if (!jsonObj.is_array() || jsonObj.size() < 2)
+            {
+                return pxr::VtValue();
+            }
             auto value = pxr::GfMatrix2d();
             for (int i = 0; i < 2; ++i)
             {
@@ -1309,6 +1322,11 @@ private:
         }
         case SdfDataType::eMatrix3d:
         {
+            // See note in eMatrix4d case: validate outer shape before indexing.
+            if (!jsonObj.is_array() || jsonObj.size() < 3)
+            {
+                return pxr::VtValue();
+            }
             auto value = pxr::GfMatrix3d();
             for (int i = 0; i < 3; ++i)
             {
@@ -1463,22 +1481,29 @@ private:
     template <typename DataType>
     pxr::VtArray<DataType> arrayTypeFromJson(const nlohmann::json& jsonObj, SdfDataType type, bool* status)
     {
-        *status = true;
         pxr::VtArray<DataType> array;
-        if (jsonObj.is_array())
+        // Reject anything that isn't a JSON array up front. Previously this
+        // returned an empty VtArray with status=true, which the caller wraps in
+        // a non-empty VtValue and reports as a successful set -- so calling
+        // set_attribute on an int[] attribute with the JSON literal "hello"
+        // would silently clear the array instead of failing the request.
+        if (!jsonObj.is_array())
         {
-            for (size_t i = 0; i < jsonObj.size(); ++i)
+            *status = false;
+            return array;
+        }
+        *status = true;
+        for (size_t i = 0; i < jsonObj.size(); ++i)
+        {
+            auto value = valueTypeFromJson(jsonObj.at(i), type);
+            if (value.IsEmpty())
             {
-                auto value = valueTypeFromJson(jsonObj.at(i), type);
-                if (value.IsEmpty())
-                {
-                    *status = false;
-                    break;
-                }
-                else
-                {
-                    array.push_back(value.Get<DataType>());
-                }
+                *status = false;
+                break;
+            }
+            else
+            {
+                array.push_back(value.Get<DataType>());
             }
         }
         return array;

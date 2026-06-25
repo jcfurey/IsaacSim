@@ -216,7 +216,12 @@ public:
         }
 
         const double time = db.inputs.timeStamp();
-        std::vector<TfTransformStamped> transforms;
+        // Reuse the transforms buffer across publishes: vector::clear() preserves
+        // capacity, so after the first frame the per-publish allocation is amortized
+        // to zero. Previously this allocated/freed per call, which adds up at TF
+        // publish rates (often 100+ Hz).
+        m_transforms.clear();
+        std::vector<TfTransformStamped>& transforms = m_transforms;
 
         if (m_useExternalData)
         {
@@ -244,7 +249,8 @@ public:
 
             for (size_t i = 0; i < count; i++)
             {
-                TfTransformStamped msg;
+                transforms.emplace_back();
+                TfTransformStamped& msg = transforms.back();
                 msg.timeStamp = time;
                 msg.parentFrame = db.tokenToString(parentFrames[i]);
                 msg.childFrame = db.tokenToString(childFrames[i]);
@@ -260,8 +266,6 @@ public:
                 msg.rotationY = ori[1];
                 msg.rotationZ = ori[2];
                 msg.rotationW = ori[3];
-
-                transforms.push_back(msg);
             }
         }
         else
@@ -281,7 +285,8 @@ public:
                 [stageUnits, &transforms, &time](
                     const std::string& parentFrame, const std::string& childFrame, const physx::PxTransform& t)
             {
-                TfTransformStamped currentMsg;
+                transforms.emplace_back();
+                TfTransformStamped& currentMsg = transforms.back();
                 currentMsg.timeStamp = time;
                 currentMsg.childFrame = childFrame;
                 currentMsg.parentFrame = parentFrame;
@@ -294,14 +299,12 @@ public:
                 currentMsg.rotationY = t.q.y;
                 currentMsg.rotationZ = t.q.z;
                 currentMsg.rotationW = t.q.w;
-
-                transforms.push_back(currentMsg);
             };
 
             m_poseTree->processAllFrames(addPoseLambda);
         }
 
-        state.m_message->writeData(time, transforms);
+        state.m_message->writeData(time, m_transforms);
         state.m_publisher.get()->publish(state.m_message->getPtr());
 
         return true;
@@ -339,6 +342,9 @@ private:
     long m_stageId = 0;
     pxr::UsdStageRefPtr m_usdStage;
     std::unique_ptr<isaacsim::core::includes::posetree::PoseTree> m_poseTree;
+    // Persistent across publishTF calls so vector::clear() reuses capacity
+    // instead of reallocating every frame.
+    std::vector<TfTransformStamped> m_transforms;
 };
 
 REGISTER_OGN_NODE()

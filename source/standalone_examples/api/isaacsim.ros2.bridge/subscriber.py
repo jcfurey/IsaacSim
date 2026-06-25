@@ -106,5 +106,12 @@ class Subscriber(Node):
 
 if __name__ == "__main__":
     rclpy.init()
-    subscriber = Subscriber()
-    subscriber.run_simulation()
+    try:
+        subscriber = Subscriber()
+        subscriber.run_simulation()
+    finally:
+        # Mirror the rclpy.init() above so the DDS context shuts down cleanly
+        # on exit (or on exception). Without this the participant lingers on
+        # the network and re-running the script in the same process fails
+        # with "rclpy is already initialized".
+        rclpy.shutdown()

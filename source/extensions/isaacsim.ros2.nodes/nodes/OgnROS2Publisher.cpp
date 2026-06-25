@@ -18,6 +18,7 @@
 // clang-format on
 
 #include <isaacsim/ros2/core/Ros2Node.h>
+#include <isaacsim/ros2/nodes/Ros2OgnUtils.h>
 
 #include <OgnROS2PublisherDatabase.h>
 
@@ -65,25 +66,14 @@ public:
             }
         }
 
-        // Check for changes in message type
-        std::string messagePackage = std::string(db.inputs.messagePackage());
-        std::string messageSubfolder = std::string(db.inputs.messageSubfolder());
-        std::string messageName = std::string(db.inputs.messageName());
-        if (messagePackage != state.m_messagePackage)
-        {
-            state.m_messageUpdateNeeded = true;
-            state.m_messagePackage = messagePackage;
-        }
-        if (messageSubfolder != state.m_messageSubfolder)
-        {
-            state.m_messageUpdateNeeded = true;
-            state.m_messageSubfolder = messageSubfolder;
-        }
-        if (messageName != state.m_messageName)
-        {
-            state.m_messageUpdateNeeded = true;
-            state.m_messageName = messageName;
-        }
+        // Check for changes in message type; copy into state only on a real
+        // change to avoid three per-tick string allocations per publisher.
+        state.m_messageUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.messagePackage(), state.m_messagePackage);
+        state.m_messageUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.messageSubfolder(), state.m_messageSubfolder);
+        state.m_messageUpdateNeeded |=
+            isaacsim::ros2::omnigraph_utils::updateCachedString(db.inputs.messageName(), state.m_messageName);
         // Update message and node attributes
         if (state.m_messageUpdateNeeded || !state.m_message)
         {
@@ -98,10 +88,11 @@ public:
             return false;
         }
 
-        // Check for changes in publisher
-        std::string topicName = std::string(db.inputs.topicName());
+        // Check for changes in publisher. Same change-then-copy pattern as
+        // above to avoid two more per-tick string allocations.
+        const std::string& topicName = db.inputs.topicName();
         uint64_t queueSize = db.inputs.queueSize();
-        std::string qosProfile = db.inputs.qosProfile();
+        const std::string& qosProfile = db.inputs.qosProfile();
         if (topicName != state.m_topicName)
         {
             state.m_publisherUpdateNeeded = true;
@@ -145,7 +136,7 @@ public:
             }
 
             // Create publisher
-            std::string messageType = messagePackage + "/" + messageSubfolder + "/" + messageName;
+            std::string messageType = state.m_messagePackage + "/" + state.m_messageSubfolder + "/" + state.m_messageName;
             CARB_LOG_INFO("OgnROS2Publisher: creating publisher: %s (%s)", fullTopicName.c_str(), messageType.c_str());
             state.m_publisher = state.m_factory->createPublisher(
                 state.m_nodeHandle.get(), fullTopicName.c_str(), state.m_message->getTypeSupportHandle(), qos);
@@ -211,7 +202,6 @@ public:
                     auto inputValue =
                         _getAttributeReadableArrayData<bool*>(db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<bool>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     // std::vector<bool> is a specialization that has no ::data
                     for (size_t j = 0; j < arraySize; ++j)
@@ -233,7 +223,6 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<uint8_t*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<uint8_t>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(uint8_t));
                 }
@@ -251,7 +240,6 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<int32_t*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<int32_t>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(int32_t));
                 }
@@ -269,7 +257,6 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<uint32_t*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<uint32_t>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(uint32_t));
                 }
@@ -287,7 +274,6 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<int64_t*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<int64_t>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(int64_t));
                 }
@@ -305,7 +291,6 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<uint64_t*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<uint64_t>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(uint64_t));
                 }
@@ -328,7 +313,6 @@ public:
                     auto inputValue =
                         _getAttributeReadableArrayData<float*>(db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<float>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(float));
                 }
@@ -346,7 +330,6 @@ public:
                     auto inputValue =
                         _getAttributeReadableArrayData<double*>(db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<double>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(double));
                 }
@@ -364,7 +347,6 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<NameToken*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<std::string>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     for (size_t j = 0; j < arraySize; ++j)
                     {
@@ -385,7 +367,6 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<NameToken*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     auto data = std::static_pointer_cast<std::vector<nlohmann::json>>(messageData[i]);
-                    data->clear();
                     data->resize(arraySize);
                     for (size_t j = 0; j < arraySize; ++j)
                     {
@@ -542,7 +523,7 @@ private:
     {
         auto db = OgnROS2PublisherDatabase(nodeObj);
         auto& state = db.perInstanceState<OgnROS2Publisher>();
-        std::string messageType = messagePackage + "/" + messageSubfolder + "/" + messageName;
+        std::string messageType = state.m_messagePackage + "/" + state.m_messageSubfolder + "/" + state.m_messageName;
         // Naive check on inputs
         if (messagePackage.empty() || messageSubfolder.empty() || messageName.empty())
         {

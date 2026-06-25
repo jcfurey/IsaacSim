@@ -16,6 +16,7 @@
 """Demonstrate Carter robot stereo camera setup with ROS 2."""
 
 import argparse
+import sys
 
 from isaacsim import SimulationApp
 
@@ -44,7 +45,7 @@ assets_root_path = get_assets_root_path()
 if assets_root_path is None:
     carb.log_error("Could not find Isaac Sim assets folder")
     simulation_app.close()
-    exit()
+    sys.exit(1)
 
 usd_path = assets_root_path + "/Isaac/Samples/ROS2/Scenario/carter_warehouse_navigation.usd"
 omni.usd.get_context().open_stage(usd_path, None)

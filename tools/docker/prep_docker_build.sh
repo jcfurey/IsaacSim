@@ -14,6 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Resolve repo root from this script's location so the many relative paths
+# below (./build.sh, _build/..., tools/..., _container_temp) resolve from the
+# correct directory regardless of the caller's cwd.
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
+cd "$REPO_ROOT" || { echo "ERROR: Could not cd to repo root $REPO_ROOT" >&2; exit 1; }
+
 # Import section marker functions if we are in CI
 if [[ "${CI}" == "true" && -f ./tools/ci/gitlab/section_marker.sh ]]; then
     source ./tools/ci/gitlab/section_marker.sh
