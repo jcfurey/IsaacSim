@@ -19,6 +19,7 @@ import asyncio
 import concurrent.futures
 import os
 import threading
+import time
 
 import carb
 import isaacsim.core.experimental.utils.prim as prim_utils
@@ -363,6 +364,11 @@ class ROS2ServiceManager:
     # callback to be non-blocking).
     ASYNC_CALLBACK_TIMEOUT_SEC = 60.0
 
+    # Backoff before restarting executor.spin() after it raises. spin() normally
+    # blocks on the wait set, but if it ever fails immediately and repeatedly this
+    # keeps the restart loop in _spin() from becoming a busy loop that floods the log.
+    SPIN_RESTART_BACKOFF_SEC = 0.5
+
     def _wrap_async_callback(self, async_callback: callable) -> callable:
         """Wrap any async callback to work with ROS2 services and actions.
 
@@ -382,10 +388,16 @@ class ROS2ServiceManager:
             try:
                 return future.result(timeout=self.ASYNC_CALLBACK_TIMEOUT_SEC)
             except concurrent.futures.TimeoutError:
+                # cancel() requests cancellation of the underlying coroutine, which
+                # takes effect at its next await point. A callback blocked in
+                # synchronous/CPU-bound code (or one that swallows CancelledError)
+                # may keep running in the background; we stop waiting on it either
+                # way and return a service error to the client.
                 future.cancel()
                 carb.log_error(
-                    f"Async ROS2 callback exceeded {self.ASYNC_CALLBACK_TIMEOUT_SEC}s timeout and was cancelled. "
-                    "The client will receive a service error. If this is expected, raise "
+                    f"Async ROS2 callback exceeded {self.ASYNC_CALLBACK_TIMEOUT_SEC}s timeout; cancellation "
+                    "requested and the client will receive a service error (the callback may still be running "
+                    "if it does not await). If this is expected, raise "
                     "ROS2ServiceManager.ASYNC_CALLBACK_TIMEOUT_SEC on the manager instance."
                 )
                 raise
@@ -463,7 +475,12 @@ class ROS2ServiceManager:
             except Exception as e:
                 if self._shutdown_requested:
                     break
-                carb.log_error(f"Error in executor thread: {e}; restarting executor spin")
+                carb.log_error(
+                    f"Error in executor thread: {e}; restarting executor spin in {self.SPIN_RESTART_BACKOFF_SEC}s"
+                )
+                # Re-check shutdown after the backoff so a shutdown() during the
+                # sleep exits promptly instead of spinning the executor again.
+                time.sleep(self.SPIN_RESTART_BACKOFF_SEC)
         carb.log_info("ROS2 executor thread stopping")
 
 

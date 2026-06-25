@@ -523,7 +523,11 @@ private:
     {
         auto db = OgnROS2PublisherDatabase(nodeObj);
         auto& state = db.perInstanceState<OgnROS2Publisher>();
-        std::string messageType = state.m_messagePackage + "/" + state.m_messageSubfolder + "/" + state.m_messageName;
+        // Build from the passed-in arguments, not state.m_*: _onMessageChanged
+        // calls this with fresh db.inputs values before compute() has synced
+        // them into state, so using state here would log/warn the previous
+        // message type while actually creating (and validating) the new one.
+        std::string messageType = messagePackage + "/" + messageSubfolder + "/" + messageName;
         // Naive check on inputs
         if (messagePackage.empty() || messageSubfolder.empty() || messageName.empty())
         {
