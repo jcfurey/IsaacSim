@@ -63,12 +63,6 @@ inline std::string inputOutput(bool isOutput)
 
 /**
  * @brief Copies a node input string into a cached copy only when it changed
- * @details
- * Compares the current input value against the cached copy and updates the
- * cache only on change, so callers avoid constructing a new std::string from
- * the node input on every compute() tick. Taking the input through a function
- * parameter also keeps callers from binding longer-lived references to the
- * temporaries returned by the generated OGN database accessors.
  *
  * @param[in] newValue Current input value from the OGN database accessor
  * @param[in,out] cached Cached copy to compare against and update
@@ -76,6 +70,10 @@ inline std::string inputOutput(bool isOutput)
  */
 inline bool updateCachedString(const std::string& newValue, std::string& cached)
 {
+    // Comparing before assigning lets callers avoid constructing a new std::string
+    // from the node input on every compute() tick, and taking the input by const
+    // reference keeps callers from binding longer-lived references to the temporaries
+    // returned by the generated OGN database accessors.
     if (newValue == cached)
     {
         return false;
