@@ -186,8 +186,8 @@ public:
             return false;
         }
 
-        auto messageData = std::static_pointer_cast<Ros2DynamicMessage>(state.m_message)->readData(true);
-        auto messageFields = std::static_pointer_cast<Ros2DynamicMessage>(state.m_message)->getMessageFields();
+        const auto& messageData = std::static_pointer_cast<Ros2DynamicMessage>(state.m_message)->readData(true);
+        const auto& messageFields = std::static_pointer_cast<Ros2DynamicMessage>(state.m_message)->getMessageFields();
 
         for (size_t i = 0; i < messageFields.size(); ++i)
         {
@@ -195,7 +195,7 @@ public:
             {
                 continue;
             }
-            auto messageField = messageFields.at(i);
+            const auto& messageField = messageFields.at(i);
             switch (messageField.dataType)
             {
             case omni::fabric::BaseDataType::eBool:
