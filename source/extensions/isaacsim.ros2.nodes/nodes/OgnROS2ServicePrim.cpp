@@ -753,9 +753,6 @@ private:
 
     /**
      * @brief Looks up an attribute on a prim, constructing the TfToken only once.
-     * @details
-     * TfToken interning goes through a global lock, so the token is constructed
-     * once and reused for both the existence check and the lookup.
      *
      * @param[in] prim Prim to query.
      * @param[in] attrName Attribute name.
@@ -763,6 +760,8 @@ private:
      */
     static pxr::UsdAttribute getPrimAttribute(const pxr::UsdPrim& prim, const std::string& attrName)
     {
+        // TfToken interning goes through a global lock, so build the token once and
+        // reuse it for both the existence check and the lookup.
         const pxr::TfToken attrToken(attrName.c_str());
         return prim.HasAttribute(attrToken) ? prim.GetAttribute(attrToken) : pxr::UsdAttribute();
     }
@@ -1501,10 +1500,7 @@ private:
                 *status = false;
                 break;
             }
-            else
-            {
-                array.push_back(value.Get<DataType>());
-            }
+            array.push_back(value.Get<DataType>());
         }
         return array;
     }

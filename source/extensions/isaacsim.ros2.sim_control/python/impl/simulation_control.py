@@ -109,6 +109,19 @@ class ROS2ServiceManager:
     for Isaac Sim simulation control.
     """
 
+    # Maximum time to wait for an async service/action callback to complete.
+    # Without this bound, a single hung callback blocks the rclpy executor
+    # thread indefinitely and silently breaks every other service on this
+    # node. Override on the manager instance if you have a legitimate
+    # long-running callback (typically the right answer is to redesign the
+    # callback to be non-blocking).
+    ASYNC_CALLBACK_TIMEOUT_SEC = 60.0
+
+    # Backoff before restarting executor.spin() after it raises. spin() normally
+    # blocks on the wait set, but if it ever fails immediately and repeatedly this
+    # keeps the restart loop in _spin() from becoming a busy loop that floods the log.
+    SPIN_RESTART_BACKOFF_SEC = 0.5
+
     def __init__(self) -> None:
         self.node_name = "isaac_sim_control"
         self.node = None
@@ -356,19 +369,6 @@ class ROS2ServiceManager:
             carb.log_error(f"Failed to register action server '{action_name}': {e}")
             return False
 
-    # Maximum time to wait for an async service/action callback to complete.
-    # Without this bound, a single hung callback blocks the rclpy executor
-    # thread indefinitely and silently breaks every other service on this
-    # node. Override on the manager instance if you have a legitimate
-    # long-running callback (typically the right answer is to redesign the
-    # callback to be non-blocking).
-    ASYNC_CALLBACK_TIMEOUT_SEC = 60.0
-
-    # Backoff before restarting executor.spin() after it raises. spin() normally
-    # blocks on the wait set, but if it ever fails immediately and repeatedly this
-    # keeps the restart loop in _spin() from becoming a busy loop that floods the log.
-    SPIN_RESTART_BACKOFF_SEC = 0.5
-
     def _wrap_async_callback(self, async_callback: callable) -> callable:
         """Wrap any async callback to work with ROS2 services and actions.
 
@@ -391,13 +391,22 @@ class ROS2ServiceManager:
                 # cancel() requests cancellation of the underlying coroutine, which
                 # takes effect at its next await point. A callback blocked in
                 # synchronous/CPU-bound code (or one that swallows CancelledError)
-                # may keep running in the background; we stop waiting on it either
-                # way and return a service error to the client.
+                # may keep running in the background; we stop waiting on it either way.
+                #
+                # We re-raise rather than fabricate a response: this wrapper is shared
+                # by service callbacks (request, response) and action execute callbacks
+                # (goal_handle), so there is no single response type to return here. The
+                # exception propagates out of executor.spin() and is caught by the
+                # restart loop in _spin(). Consequence: the requesting client does NOT
+                # receive a populated reply for this call -- it fails/ times out
+                # client-side -- and the executor is restarted after a short backoff.
+                # Per-handler cleanup (e.g. pausing the timeline) must be done in the
+                # handler's own CancelledError path, not here.
                 future.cancel()
                 carb.log_error(
                     f"Async ROS2 callback exceeded {self.ASYNC_CALLBACK_TIMEOUT_SEC}s timeout; cancellation "
-                    "requested and the client will receive a service error (the callback may still be running "
-                    "if it does not await). If this is expected, raise "
+                    "requested and the executor will be restarted. The pending request will fail without a "
+                    "reply (the callback may still be running if it does not await). If this is expected, raise "
                     "ROS2ServiceManager.ASYNC_CALLBACK_TIMEOUT_SEC on the manager instance."
                 )
                 raise
@@ -1402,6 +1411,19 @@ class SimulationControl:
             response.result.result = Result.RESULT_OK
             response.result.error_message = f"Successfully stepped simulation by {steps} frames."
 
+        except asyncio.CancelledError:
+            # The coroutine was cancelled mid-step (e.g. the executor callback
+            # timeout fired). CancelledError is a BaseException, so it bypasses
+            # the `except Exception` handler below; pause synchronously here (no
+            # await, which could re-raise during unwinding) so we never leave the
+            # timeline playing, then propagate the cancellation.
+            try:
+                self.timeline.pause()
+                self.timeline.commit()
+            except Exception:
+                pass
+            raise
+
         except Exception as e:
             # Ensure simulation is paused if an error occurs
             try:
@@ -1753,6 +1775,17 @@ class SimulationControl:
 
             result_msg.result.error_message = f"Successfully stepped simulation by {steps} frames"
             goal_handle.succeed()
+
+        except asyncio.CancelledError:
+            # Cancelled mid-step (e.g. the executor callback timeout fired).
+            # CancelledError bypasses `except Exception`; pause synchronously so the
+            # timeline is not left playing, then propagate the cancellation.
+            try:
+                self.timeline.pause()
+                self.timeline.commit()
+            except Exception:
+                pass
+            raise
 
         except Exception as e:
             # Ensure simulation is paused if an error occurs

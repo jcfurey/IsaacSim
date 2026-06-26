@@ -18,6 +18,7 @@
 import asyncio
 import threading
 
+import carb
 import omni
 from isaacsim.core.experimental.utils import stage as stage_utils
 from isaacsim.core.simulation_manager import SimulationManager

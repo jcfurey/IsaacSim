@@ -122,8 +122,7 @@ public:
             }
 
             Ros2QoSProfile qos;
-            const std::string& currentQosProfile = db.inputs.qosProfile();
-            if (currentQosProfile.empty())
+            if (state.m_qosProfile.empty())
             {
                 qos.depth = state.m_queueSize;
             }
@@ -186,13 +185,13 @@ public:
             return false;
         }
 
-        auto messageData = std::static_pointer_cast<Ros2DynamicMessage>(state.m_message)->getVectorContainer(true);
-        auto messageFields = std::static_pointer_cast<Ros2DynamicMessage>(state.m_message)->getMessageFields();
+        const auto& messageData = std::static_pointer_cast<Ros2DynamicMessage>(state.m_message)->getVectorContainer(true);
+        const auto& messageFields = std::static_pointer_cast<Ros2DynamicMessage>(state.m_message)->getMessageFields();
 
         size_t arraySize;
         for (size_t i = 0; i < messageFields.size(); ++i)
         {
-            auto messageField = messageFields.at(i);
+            const auto& messageField = messageFields.at(i);
             switch (messageField.dataType)
             {
             case omni::fabric::BaseDataType::eBool:

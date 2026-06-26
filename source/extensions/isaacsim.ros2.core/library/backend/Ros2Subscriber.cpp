@@ -90,6 +90,9 @@ bool Ros2SubscriberImpl::spin(void* msg)
             return false;
         }
         m_waitSetInitialized = true;
+        // Emitted once when a subscriber first starts polling, not on every spin()
+        // and not on the success path, so a healthy topic does not log a warning.
+        CARB_LOG_WARN_ONCE("Subscriber created, check topic name and message type if not active");
     }
 
     rcl_ret_t rc = rcl_wait_set_clear(&m_waitSet);
@@ -106,7 +109,6 @@ bool Ros2SubscriberImpl::spin(void* msg)
         return false;
     }
     rc = rcl_wait(&m_waitSet, 0);
-    CARB_LOG_WARN_ONCE("Subscriber created, check topic name and message type if not active");
     if (rc != RCL_RET_OK)
     {
         // RCL_RET_TIMEOUT is the normal "no message ready" result for this
