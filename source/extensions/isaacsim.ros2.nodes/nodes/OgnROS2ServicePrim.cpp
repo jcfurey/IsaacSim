@@ -997,6 +997,29 @@ private:
         return true;
     }
 
+    // nlohmann's get<T>() narrows out-of-range integers silently (e.g. 300 stored
+    // into a uchar attribute becomes 44) and the service still reports success.
+    // These helpers reject values that do not fit the target type so such a request
+    // fails cleanly instead of corrupting the stage.
+    static bool jsonFitsInt32(const nlohmann::json& j)
+    {
+        if (j.is_number_unsigned())
+        {
+            return j.get<uint64_t>() <= 2147483647ull;
+        }
+        if (j.is_number_integer())
+        {
+            const int64_t v = j.get<int64_t>();
+            return v >= -2147483648LL && v <= 2147483647LL;
+        }
+        return false;
+    }
+
+    static bool jsonFitsUnsigned(const nlohmann::json& j, uint64_t maxValue)
+    {
+        return j.is_number_unsigned() && j.get<uint64_t>() <= maxValue;
+    }
+
     pxr::VtValue valueTypeFromJson(const pxr::UsdAttribute& attr, const nlohmann::json& jsonObj)
     {
         return valueTypeFromJson(jsonObj, attr.GetTypeName().GetAsToken());
@@ -1288,7 +1311,7 @@ private:
         }
         case SdfDataType::eInt:
         {
-            if (jsonObj.is_number_integer())
+            if (jsonFitsInt32(jsonObj))
             {
                 vtValue = pxr::VtValue(jsonObj.get<int32_t>());
             }
@@ -1491,7 +1514,7 @@ private:
         }
         case SdfDataType::eUChar:
         {
-            if (jsonObj.is_number_unsigned())
+            if (jsonFitsUnsigned(jsonObj, 0xFFull))
             {
                 vtValue = pxr::VtValue(jsonObj.get<uint8_t>());
             }
@@ -1504,7 +1527,7 @@ private:
         }
         case SdfDataType::eUInt:
         {
-            if (jsonObj.is_number_unsigned())
+            if (jsonFitsUnsigned(jsonObj, 0xFFFFFFFFull))
             {
                 vtValue = pxr::VtValue(jsonObj.get<uint32_t>());
             }
@@ -1593,6 +1616,13 @@ private:
                 }
                 break;
             case SdfDataType::eInt:
+                // Range-check each component so a vecNi element that overflows int32
+                // is rejected instead of silently wrapping.
+                if (!jsonFitsInt32(jsonObj.at(i)))
+                {
+                    return false;
+                }
+                break;
             case SdfDataType::eInt64:
                 if (!jsonObj.at(i).is_number_integer())
                 {
