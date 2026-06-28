@@ -202,7 +202,7 @@ public:
             {
                 if (messageField.isArray)
                 {
-                    auto data = *std::static_pointer_cast<const std::vector<bool>>(messageData.at(i));
+                    const auto& data = *std::static_pointer_cast<const std::vector<bool>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<bool*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
                     // std::vector<bool> is a specialization that has no ::data
@@ -222,7 +222,7 @@ public:
             {
                 if (messageField.isArray)
                 {
-                    auto data = *std::static_pointer_cast<const std::vector<uint8_t>>(messageData.at(i));
+                    const auto& data = *std::static_pointer_cast<const std::vector<uint8_t>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<uint8_t*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(uint8_t));
@@ -238,7 +238,7 @@ public:
             {
                 if (messageField.isArray)
                 {
-                    auto data = *std::static_pointer_cast<const std::vector<int32_t>>(messageData.at(i));
+                    const auto& data = *std::static_pointer_cast<const std::vector<int32_t>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<int32_t*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(int32_t));
@@ -254,7 +254,7 @@ public:
             {
                 if (messageField.isArray)
                 {
-                    auto data = *std::static_pointer_cast<const std::vector<uint32_t>>(messageData.at(i));
+                    const auto& data = *std::static_pointer_cast<const std::vector<uint32_t>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<uint32_t*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(uint32_t));
@@ -270,7 +270,7 @@ public:
             {
                 if (messageField.isArray)
                 {
-                    auto data = *std::static_pointer_cast<const std::vector<int64_t>>(messageData.at(i));
+                    const auto& data = *std::static_pointer_cast<const std::vector<int64_t>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<int64_t*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(int64_t));
@@ -286,7 +286,7 @@ public:
             {
                 if (messageField.isArray)
                 {
-                    auto data = *std::static_pointer_cast<const std::vector<uint64_t>>(messageData.at(i));
+                    const auto& data = *std::static_pointer_cast<const std::vector<uint64_t>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<uint64_t*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(uint64_t));
@@ -307,7 +307,7 @@ public:
             {
                 if (messageField.isArray)
                 {
-                    auto data = *std::static_pointer_cast<const std::vector<float>>(messageData.at(i));
+                    const auto& data = *std::static_pointer_cast<const std::vector<float>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<float*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(float));
@@ -323,7 +323,7 @@ public:
             {
                 if (messageField.isArray)
                 {
-                    auto data = *std::static_pointer_cast<const std::vector<double>>(messageData.at(i));
+                    const auto& data = *std::static_pointer_cast<const std::vector<double>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<double*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(double));
@@ -339,7 +339,7 @@ public:
             {
                 if (messageField.isArray)
                 {
-                    auto stringValues = *std::static_pointer_cast<const std::vector<std::string>>(messageData.at(i));
+                    const auto& stringValues = *std::static_pointer_cast<const std::vector<std::string>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<NameToken*>(
                         db.abi_node(), "outputs:" + messageField.name, stringValues.size());
                     for (size_t j = 0; j < stringValues.size(); ++j)
@@ -349,7 +349,7 @@ public:
                 }
                 else
                 {
-                    auto stringValue = *std::static_pointer_cast<const std::string>(messageData.at(i));
+                    const auto& stringValue = *std::static_pointer_cast<const std::string>(messageData.at(i));
                     auto outputValue =
                         _getAttributeWritableData<NameToken>(db.abi_node(), "outputs:" + messageField.name);
                     *outputValue = db.stringToToken(stringValue.c_str());
@@ -360,7 +360,7 @@ public:
             {
                 if (messageField.isArray)
                 {
-                    auto array = *std::static_pointer_cast<const std::vector<nlohmann::json>>(messageData.at(i));
+                    const auto& array = *std::static_pointer_cast<const std::vector<nlohmann::json>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<NameToken*>(
                         db.abi_node(), "outputs:" + messageField.name, array.size());
                     for (size_t j = 0; j < array.size(); ++j)

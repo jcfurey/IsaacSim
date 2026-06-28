@@ -1308,7 +1308,7 @@ void Ros2DynamicMessageImpl::setMessageValues(const void* members, uint8_t* mess
         {
             continue;
         }
-        auto value = container[member->name_];
+        const nlohmann::json& value = container.at(member->name_);
         switch (member->type_id_)
         {
         case rosidl_typesupport_introspection_c__ROS_TYPE_FLOAT:
@@ -1529,6 +1529,9 @@ void Ros2DynamicMessageImpl::setMessageValues(const void* members, uint8_t* mess
         case rosidl_typesupport_introspection_c__ROS_TYPE_WSTRING:
         {
             // TODO: proccess WSTRING (no messages with 'path:*/msgs/*.msg "wstring"')
+            // break is required: without it control falls through into ROS_TYPE_MESSAGE,
+            // which dereferences member->members_ (null for a wstring field) -> crash.
+            break;
         }
         case rosidl_typesupport_introspection_c__ROS_TYPE_MESSAGE:
         {
@@ -1784,6 +1787,9 @@ void Ros2DynamicMessageImpl::setMessageValues(const void* members,
         case rosidl_typesupport_introspection_c__ROS_TYPE_WSTRING:
         {
             // TODO: proccess WSTRING (no messages with 'path:*/msgs/*.msg "wstring"')
+            // break is required: without it control falls through into ROS_TYPE_MESSAGE,
+            // which dereferences member->members_ (null for a wstring field) -> crash.
+            break;
         }
         case rosidl_typesupport_introspection_c__ROS_TYPE_MESSAGE:
         {
