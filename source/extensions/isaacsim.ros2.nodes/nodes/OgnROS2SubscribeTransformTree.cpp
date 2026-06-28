@@ -198,14 +198,16 @@ public:
 
             for (size_t i = 0; i < transforms.size(); i++)
             {
-                std::string childFrame = transforms[i].childFrame;
-                std::string parentFrame = transforms[i].parentFrame;
-
-                if (m_framePrimsMap.count(childFrame) == 0)
+                // Look each frame up once and reference the result: the previous
+                // count() + operator[] did two map lookups per frame and operator[]
+                // can insert an empty entry on a miss.
+                const auto childIt = m_framePrimsMap.find(transforms[i].childFrame);
+                if (childIt == m_framePrimsMap.end())
                 {
                     continue;
                 }
-                if (m_framePrimsMap.count(parentFrame) == 0)
+                const auto parentIt = m_framePrimsMap.find(transforms[i].parentFrame);
+                if (parentIt == m_framePrimsMap.end())
                 {
                     continue;
                 }
@@ -214,8 +216,8 @@ public:
                 // the corresponding prim may have a different parent.  Given a child to parent transform,
                 // we need to calculate the child to usd parent transform.  This is done by combining child to parent,
                 // parent to world and the inverse of the usd parent to world transforms
-                std::string childPrimPath = m_framePrimsMap[childFrame];
-                std::string parentPrimPath = m_framePrimsMap[parentFrame];
+                const std::string& childPrimPath = childIt->second;
+                const std::string& parentPrimPath = parentIt->second;
 
                 pxr::UsdPrim childPrim = m_usdStage->GetPrimAtPath(pxr::SdfPath(childPrimPath));
                 pxr::UsdPrim parentPrim = m_usdStage->GetPrimAtPath(pxr::SdfPath(parentPrimPath));
