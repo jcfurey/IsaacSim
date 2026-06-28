@@ -1495,12 +1495,14 @@ private:
         for (size_t i = 0; i < jsonObj.size(); ++i)
         {
             auto value = valueTypeFromJson(jsonObj.at(i), type);
-            if (value.IsEmpty())
+            // IsHolding<DataType>() guards both the empty case and a type mismatch:
+            // VtValue::Get<DataType>() would otherwise hit a fatal TF_AXIOM abort.
+            if (!value.IsHolding<DataType>())
             {
                 *status = false;
                 break;
             }
-            array.push_back(value.Get<DataType>());
+            array.push_back(value.UncheckedGet<DataType>());
         }
         return array;
     }
@@ -1580,12 +1582,18 @@ private:
     nlohmann::json valueTypeToJson(const pxr::VtValue& vtValue, SdfDataType type, bool useDefaultValueIfEmpty = true)
     {
         nlohmann::json jsonObj;
+        // Read every value through VtValue::GetWithDefault<T>(), never Get<T>(): Get<T>()
+        // triggers a fatal TF_AXIOM (process abort) when the stored value does not hold T,
+        // which is reachable from remote service input (an attribute whose authored value
+        // type differs from its declared typeName). GetWithDefault<T>() returns the held
+        // value on a type match and a default T{} otherwise, so a mismatch degrades to a
+        // default value instead of crashing the simulator.
         auto useDefaultValue = useDefaultValueIfEmpty && vtValue.IsEmpty();
         switch (type)
         {
         case SdfDataType::eAsset:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::SdfAssetPath>() : vtValue.Get<pxr::SdfAssetPath>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::SdfAssetPath>() : vtValue.GetWithDefault<pxr::SdfAssetPath>();
             jsonObj = value.GetAssetPath();
             break;
         }
@@ -1596,7 +1604,7 @@ private:
         }
         case SdfDataType::eBool:
         {
-            jsonObj = useDefaultValue ? vtValue.GetWithDefault<bool>() : vtValue.Get<bool>();
+            jsonObj = useDefaultValue ? vtValue.GetWithDefault<bool>() : vtValue.GetWithDefault<bool>();
             break;
         }
         case SdfDataType::eBoolArray:
@@ -1611,7 +1619,7 @@ private:
         case SdfDataType::eTexCoord3d:
         case SdfDataType::eVector3d:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec3d>() : vtValue.Get<pxr::GfVec3d>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec3d>() : vtValue.GetWithDefault<pxr::GfVec3d>();
             jsonObj = nlohmann::json::array({ value[0], value[1], value[2] });
             break;
         }
@@ -1632,7 +1640,7 @@ private:
         case SdfDataType::eTexCoord3f:
         case SdfDataType::eVector3f:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec3f>() : vtValue.Get<pxr::GfVec3f>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec3f>() : vtValue.GetWithDefault<pxr::GfVec3f>();
             jsonObj = nlohmann::json::array({ value[0], value[1], value[2] });
             break;
         }
@@ -1653,7 +1661,7 @@ private:
         case SdfDataType::eTexCoord3h:
         case SdfDataType::eVector3h:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec3h>() : vtValue.Get<pxr::GfVec3h>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec3h>() : vtValue.GetWithDefault<pxr::GfVec3h>();
             jsonObj = nlohmann::json::array(
                 { static_cast<float>(value[0]), static_cast<float>(value[1]), static_cast<float>(value[2]) });
             break;
@@ -1671,7 +1679,7 @@ private:
         case SdfDataType::eColor4d:
         case SdfDataType::eDouble4:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec4d>() : vtValue.Get<pxr::GfVec4d>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec4d>() : vtValue.GetWithDefault<pxr::GfVec4d>();
             jsonObj = nlohmann::json::array({ value[0], value[1], value[2], value[3] });
             break;
         }
@@ -1684,7 +1692,7 @@ private:
         case SdfDataType::eColor4f:
         case SdfDataType::eFloat4:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec4f>() : vtValue.Get<pxr::GfVec4f>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec4f>() : vtValue.GetWithDefault<pxr::GfVec4f>();
             jsonObj = nlohmann::json::array({ value[0], value[1], value[2], value[3] });
             break;
         }
@@ -1697,7 +1705,7 @@ private:
         case SdfDataType::eColor4h:
         case SdfDataType::eHalf4:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec4h>() : vtValue.Get<pxr::GfVec4h>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec4h>() : vtValue.GetWithDefault<pxr::GfVec4h>();
             jsonObj = nlohmann::json::array({ static_cast<float>(value[0]), static_cast<float>(value[1]),
                                               static_cast<float>(value[2]), static_cast<float>(value[3]) });
             break;
@@ -1710,7 +1718,7 @@ private:
         }
         case SdfDataType::eDouble:
         {
-            jsonObj = useDefaultValue ? vtValue.GetWithDefault<double>() : vtValue.Get<double>();
+            jsonObj = useDefaultValue ? vtValue.GetWithDefault<double>() : vtValue.GetWithDefault<double>();
             break;
         }
         case SdfDataType::eDoubleArray:
@@ -1721,7 +1729,7 @@ private:
         case SdfDataType::eDouble2:
         case SdfDataType::eTexCoord2d:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec2d>() : vtValue.Get<pxr::GfVec2d>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec2d>() : vtValue.GetWithDefault<pxr::GfVec2d>();
             jsonObj = nlohmann::json::array({ value[0], value[1] });
             break;
         }
@@ -1733,7 +1741,7 @@ private:
         }
         case SdfDataType::eFloat:
         {
-            jsonObj = useDefaultValue ? vtValue.GetWithDefault<float>() : vtValue.Get<float>();
+            jsonObj = useDefaultValue ? vtValue.GetWithDefault<float>() : vtValue.GetWithDefault<float>();
             break;
         }
         case SdfDataType::eFloatArray:
@@ -1744,7 +1752,7 @@ private:
         case SdfDataType::eFloat2:
         case SdfDataType::eTexCoord2f:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec2f>() : vtValue.Get<pxr::GfVec2f>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec2f>() : vtValue.GetWithDefault<pxr::GfVec2f>();
             jsonObj = nlohmann::json::array({ value[0], value[1] });
             break;
         }
@@ -1757,7 +1765,7 @@ private:
         case SdfDataType::eFrame4d:
         case SdfDataType::eMatrix4d:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfMatrix4d>() : vtValue.Get<pxr::GfMatrix4d>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfMatrix4d>() : vtValue.GetWithDefault<pxr::GfMatrix4d>();
             jsonObj = nlohmann::json::array();
             jsonObj.push_back(nlohmann::json::array(
                 { value.GetRow(0)[0], value.GetRow(0)[1], value.GetRow(0)[2], value.GetRow(0)[3] }));
@@ -1777,7 +1785,7 @@ private:
         }
         case SdfDataType::eHalf:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfHalf>() : vtValue.Get<pxr::GfHalf>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfHalf>() : vtValue.GetWithDefault<pxr::GfHalf>();
             jsonObj = static_cast<float>(value);
             break;
         }
@@ -1789,7 +1797,7 @@ private:
         case SdfDataType::eHalf2:
         case SdfDataType::eTexCoord2h:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec2h>() : vtValue.Get<pxr::GfVec2h>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec2h>() : vtValue.GetWithDefault<pxr::GfVec2h>();
             jsonObj = nlohmann::json::array({ static_cast<float>(value[0]), static_cast<float>(value[1]) });
             break;
         }
@@ -1801,7 +1809,7 @@ private:
         }
         case SdfDataType::eInt:
         {
-            jsonObj = useDefaultValue ? vtValue.GetWithDefault<int32_t>() : vtValue.Get<int32_t>();
+            jsonObj = useDefaultValue ? vtValue.GetWithDefault<int32_t>() : vtValue.GetWithDefault<int32_t>();
             break;
         }
         case SdfDataType::eIntArray:
@@ -1811,7 +1819,7 @@ private:
         }
         case SdfDataType::eInt2:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec2i>() : vtValue.Get<pxr::GfVec2i>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec2i>() : vtValue.GetWithDefault<pxr::GfVec2i>();
             jsonObj = nlohmann::json::array({ value[0], value[1] });
             break;
         }
@@ -1822,7 +1830,7 @@ private:
         }
         case SdfDataType::eInt3:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec3i>() : vtValue.Get<pxr::GfVec3i>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec3i>() : vtValue.GetWithDefault<pxr::GfVec3i>();
             jsonObj = nlohmann::json::array({ value[0], value[1], value[2] });
             break;
         }
@@ -1833,7 +1841,7 @@ private:
         }
         case SdfDataType::eInt4:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec4i>() : vtValue.Get<pxr::GfVec4i>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfVec4i>() : vtValue.GetWithDefault<pxr::GfVec4i>();
             jsonObj = nlohmann::json::array({ value[0], value[1], value[2], value[3] });
             break;
         }
@@ -1844,7 +1852,7 @@ private:
         }
         case SdfDataType::eInt64:
         {
-            jsonObj = useDefaultValue ? vtValue.GetWithDefault<int64_t>() : vtValue.Get<int64_t>();
+            jsonObj = useDefaultValue ? vtValue.GetWithDefault<int64_t>() : vtValue.GetWithDefault<int64_t>();
             break;
         }
         case SdfDataType::eInt64Array:
@@ -1854,7 +1862,7 @@ private:
         }
         case SdfDataType::eMatrix2d:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfMatrix2d>() : vtValue.Get<pxr::GfMatrix2d>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfMatrix2d>() : vtValue.GetWithDefault<pxr::GfMatrix2d>();
             jsonObj = nlohmann::json::array();
             jsonObj.push_back(nlohmann::json::array({ value.GetRow(0)[0], value.GetRow(0)[1] }));
             jsonObj.push_back(nlohmann::json::array({ value.GetRow(1)[0], value.GetRow(1)[1] }));
@@ -1867,7 +1875,7 @@ private:
         }
         case SdfDataType::eMatrix3d:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfMatrix3d>() : vtValue.Get<pxr::GfMatrix3d>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfMatrix3d>() : vtValue.GetWithDefault<pxr::GfMatrix3d>();
             jsonObj = nlohmann::json::array();
             jsonObj.push_back(nlohmann::json::array({ value.GetRow(0)[0], value.GetRow(0)[1], value.GetRow(0)[2] }));
             jsonObj.push_back(nlohmann::json::array({ value.GetRow(1)[0], value.GetRow(1)[1], value.GetRow(1)[2] }));
@@ -1881,7 +1889,7 @@ private:
         }
         case SdfDataType::eQuatd:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfQuatd>() : vtValue.Get<pxr::GfQuatd>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfQuatd>() : vtValue.GetWithDefault<pxr::GfQuatd>();
             auto imaginary = value.GetImaginary();
             jsonObj = nlohmann::json::array({ value.GetReal(), imaginary[0], imaginary[1], imaginary[2] });
             break;
@@ -1893,7 +1901,7 @@ private:
         }
         case SdfDataType::eQuatf:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfQuatf>() : vtValue.Get<pxr::GfQuatf>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfQuatf>() : vtValue.GetWithDefault<pxr::GfQuatf>();
             auto imaginary = value.GetImaginary();
             jsonObj = nlohmann::json::array({ value.GetReal(), imaginary[0], imaginary[1], imaginary[2] });
             break;
@@ -1905,7 +1913,7 @@ private:
         }
         case SdfDataType::eQuath:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfQuath>() : vtValue.Get<pxr::GfQuath>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::GfQuath>() : vtValue.GetWithDefault<pxr::GfQuath>();
             auto imaginary = value.GetImaginary();
             jsonObj = nlohmann::json::array({ static_cast<float>(value.GetReal()), static_cast<float>(imaginary[0]),
                                               static_cast<float>(imaginary[1]), static_cast<float>(imaginary[2]) });
@@ -1918,7 +1926,7 @@ private:
         }
         case SdfDataType::eString:
         {
-            jsonObj = useDefaultValue ? vtValue.GetWithDefault<std::string>() : vtValue.Get<std::string>();
+            jsonObj = useDefaultValue ? vtValue.GetWithDefault<std::string>() : vtValue.GetWithDefault<std::string>();
             break;
         }
         case SdfDataType::eStringArray:
@@ -1928,7 +1936,7 @@ private:
         }
         case SdfDataType::eTimeCode:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::SdfTimeCode>() : vtValue.Get<pxr::SdfTimeCode>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::SdfTimeCode>() : vtValue.GetWithDefault<pxr::SdfTimeCode>();
             jsonObj = value.GetValue();
             break;
         }
@@ -1939,7 +1947,7 @@ private:
         }
         case SdfDataType::eToken:
         {
-            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::TfToken>() : vtValue.Get<pxr::TfToken>();
+            auto value = useDefaultValue ? vtValue.GetWithDefault<pxr::TfToken>() : vtValue.GetWithDefault<pxr::TfToken>();
             jsonObj = value.data();
             break;
         }
@@ -1950,7 +1958,7 @@ private:
         }
         case SdfDataType::eUChar:
         {
-            jsonObj = useDefaultValue ? vtValue.GetWithDefault<uint8_t>() : vtValue.Get<uint8_t>();
+            jsonObj = useDefaultValue ? vtValue.GetWithDefault<uint8_t>() : vtValue.GetWithDefault<uint8_t>();
             break;
         }
         case SdfDataType::eUCharArray:
@@ -1960,7 +1968,7 @@ private:
         }
         case SdfDataType::eUInt:
         {
-            jsonObj = useDefaultValue ? vtValue.GetWithDefault<uint32_t>() : vtValue.Get<uint32_t>();
+            jsonObj = useDefaultValue ? vtValue.GetWithDefault<uint32_t>() : vtValue.GetWithDefault<uint32_t>();
             break;
         }
         case SdfDataType::eUIntArray:
@@ -1970,7 +1978,7 @@ private:
         }
         case SdfDataType::eUInt64:
         {
-            jsonObj = useDefaultValue ? vtValue.GetWithDefault<uint64_t>() : vtValue.Get<uint64_t>();
+            jsonObj = useDefaultValue ? vtValue.GetWithDefault<uint64_t>() : vtValue.GetWithDefault<uint64_t>();
             break;
         }
         case SdfDataType::eUInt64Array:
@@ -1990,7 +1998,7 @@ private:
         auto jsonObj = nlohmann::json::array();
         auto useDefaultValue = useDefaultValueIfEmpty && vtValue.IsEmpty();
         auto array =
-            useDefaultValue ? vtValue.GetWithDefault<pxr::VtArray<DataType>>() : vtValue.Get<pxr::VtArray<DataType>>();
+            useDefaultValue ? vtValue.GetWithDefault<pxr::VtArray<DataType>>() : vtValue.GetWithDefault<pxr::VtArray<DataType>>();
         for (size_t i = 0; i < array.size(); ++i)
         {
             auto item = pxr::VtValue(array[i]);
