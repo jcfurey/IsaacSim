@@ -630,6 +630,17 @@ private:
         auto messageFields =
             std::static_pointer_cast<Ros2DynamicMessage>(state.m_messageGetPrimsRequest)->getMessageFields();
         CARB_ASSERT(messageFields.size() == requestData.size());
+        // CARB_ASSERT is compiled out in release builds; guard at runtime so a request
+        // with fewer fields than expected (e.g. a mismatched isaac_ros2_messages service
+        // definition) fails cleanly instead of throwing std::out_of_range out of the
+        // callback from requestData.at(...), which would terminate the process.
+        if (requestData.size() < 1)
+        {
+            db.logError("OgnROS2ServicePrim: GetPrims request has %zu field(s), expected at least 1; "
+                        "ensure the isaac_ros2_messages service definitions match this build.",
+                        requestData.size());
+            return false;
+        }
 
         std::string path = *std::static_pointer_cast<std::string>(requestData.at(0));
         CARB_LOG_INFO("OgnROS2ServicePrim: get prims: %s", path.c_str());
@@ -694,6 +705,15 @@ private:
         auto messageFields =
             std::static_pointer_cast<Ros2DynamicMessage>(state.m_messageGetAttributesRequest)->getMessageFields();
         CARB_ASSERT(messageFields.size() == requestData.size());
+        // Runtime guard (CARB_ASSERT compiles out in release): a short request would
+        // otherwise throw std::out_of_range out of the callback and terminate the process.
+        if (requestData.size() < 1)
+        {
+            db.logError("OgnROS2ServicePrim: GetAttributes request has %zu field(s), expected at least 1; "
+                        "ensure the isaac_ros2_messages service definitions match this build.",
+                        requestData.size());
+            return false;
+        }
 
         std::string path = *std::static_pointer_cast<std::string>(requestData.at(0));
         CARB_LOG_INFO("OgnROS2ServicePrim: get attributes: %s", path.c_str());
@@ -783,6 +803,15 @@ private:
         auto messageFields =
             std::static_pointer_cast<Ros2DynamicMessage>(state.m_messageGetAttributeRequest)->getMessageFields();
         CARB_ASSERT(messageFields.size() == requestData.size());
+        // Runtime guard (CARB_ASSERT compiles out in release): a short request would
+        // otherwise throw std::out_of_range out of the callback and terminate the process.
+        if (requestData.size() < 2)
+        {
+            db.logError("OgnROS2ServicePrim: GetAttribute request has %zu field(s), expected at least 2; "
+                        "ensure the isaac_ros2_messages service definitions match this build.",
+                        requestData.size());
+            return false;
+        }
 
         std::string path = *std::static_pointer_cast<std::string>(requestData.at(0));
         std::string attrName = *std::static_pointer_cast<std::string>(requestData.at(1));
@@ -803,16 +832,27 @@ private:
                 const pxr::UsdAttribute attr = getPrimAttribute(targetPrim, attrName);
                 if (attr)
                 {
-                    auto jsonObj = valueTypeToJson(attr); // pxr::TfStringify(vtValue);
-                    // Build message
-                    value = jsonObj.dump();
-                    type = attr.GetTypeName().GetAsToken().GetString();
-                    success = (jsonObj.is_array() || jsonObj.is_object()) || !jsonObj.empty();
-                    if (!success)
+                    // valueTypeToJson and the nlohmann::json operations below can throw
+                    // on an unexpected stored type; convert any failure into a failed
+                    // response instead of letting it escape the service callback.
+                    try
                     {
-                        message = "Unable to serialize the attribute";
+                        auto jsonObj = valueTypeToJson(attr); // pxr::TfStringify(vtValue);
+                        // Build message
+                        value = jsonObj.dump();
+                        type = attr.GetTypeName().GetAsToken().GetString();
+                        success = (jsonObj.is_array() || jsonObj.is_object()) || !jsonObj.empty();
+                        if (!success)
+                        {
+                            message = "Unable to serialize the attribute";
+                        }
+                        CARB_LOG_INFO("OgnROS2ServicePrim: |-- %s (type name: %s)", value.c_str(), type.c_str());
                     }
-                    CARB_LOG_INFO("OgnROS2ServicePrim: |-- %s (type name: %s)", value.c_str(), type.c_str());
+                    catch (const std::exception& e)
+                    {
+                        success = false;
+                        message = std::string("Unable to serialize the attribute: ") + e.what();
+                    }
                 }
                 else
                 {
@@ -864,6 +904,15 @@ private:
         auto messageFields =
             std::static_pointer_cast<Ros2DynamicMessage>(state.m_messageSetAttributeRequest)->getMessageFields();
         CARB_ASSERT(messageFields.size() == requestData.size());
+        // Runtime guard (CARB_ASSERT compiles out in release): a short request would
+        // otherwise throw std::out_of_range out of the callback and terminate the process.
+        if (requestData.size() < 3)
+        {
+            db.logError("OgnROS2ServicePrim: SetAttribute request has %zu field(s), expected at least 3; "
+                        "ensure the isaac_ros2_messages service definitions match this build.",
+                        requestData.size());
+            return false;
+        }
 
         std::string path = *std::static_pointer_cast<std::string>(requestData.at(0));
         std::string attrName = *std::static_pointer_cast<std::string>(requestData.at(1));
@@ -889,15 +938,27 @@ private:
                         nlohmann::json jsonObj = nlohmann::json::parse(attrValueAsString);
                         CARB_LOG_INFO("OgnROS2ServicePrim: |-- %s (type name: %s)", attrValueAsString.c_str(),
                                       attr.GetTypeName().GetAsToken().GetString().c_str());
-                        auto vtValue = valueTypeFromJson(attr, jsonObj);
-                        success = !vtValue.IsEmpty();
-                        if (success)
+                        // valueTypeFromJson reads the JSON with type-specific accessors that
+                        // throw (e.g. json::type_error) when the structure does not match the
+                        // attribute type; convert any failure into a failed response instead
+                        // of letting it escape the service callback.
+                        try
                         {
-                            attr.Set(vtValue); // pxr::TfUnstringify(attrValueAsString);
+                            auto vtValue = valueTypeFromJson(attr, jsonObj);
+                            success = !vtValue.IsEmpty();
+                            if (success)
+                            {
+                                attr.Set(vtValue); // pxr::TfUnstringify(attrValueAsString);
+                            }
+                            else
+                            {
+                                message = "Unable to deserialize the attribute";
+                            }
                         }
-                        else
+                        catch (const std::exception& e)
                         {
-                            message = "Unable to deserialize the attribute";
+                            success = false;
+                            message = std::string("Unable to deserialize the attribute: ") + e.what();
                         }
                     }
                     else
