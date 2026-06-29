@@ -1292,8 +1292,13 @@ bool Ros2JointStateMessageImpl::checkValid()
     sensor_msgs__msg__JointState* jointStateMsg = static_cast<sensor_msgs__msg__JointState*>(m_msg);
     const size_t numActuators = jointStateMsg->name.size;
 
-    if (jointStateMsg->position.size != numActuators && jointStateMsg->velocity.size != numActuators &&
-        jointStateMsg->effort.size != numActuators)
+    // position/velocity/effort are each optional, but any that IS present must match
+    // the joint-name count. The previous && only rejected when ALL THREE mismatched,
+    // letting a single wrong-sized array through (downstream reads it against
+    // numActuators -> out-of-bounds). Reject if any non-empty array disagrees.
+    if ((jointStateMsg->position.size != 0 && jointStateMsg->position.size != numActuators) ||
+        (jointStateMsg->velocity.size != 0 && jointStateMsg->velocity.size != numActuators) ||
+        (jointStateMsg->effort.size != 0 && jointStateMsg->effort.size != numActuators))
     {
         return false;
     }
@@ -1591,7 +1596,12 @@ void Ros2LaserScanMessageImpl::writeData(const pxr::GfVec2f& azimuthRange,
     laserScanMsg->range_max = depthRange[1];
 
     laserScanMsg->angle_increment = horizontalResolution * degToRadF;
-    laserScanMsg->time_increment = (horizontalFov / 360.0f * laserScanMsg->scan_time) / laserScanMsg->ranges.size;
+    // Guard against an empty ranges array (no beams this scan): dividing by 0 would
+    // publish inf/nan time_increment, which downstream consumers reject.
+    laserScanMsg->time_increment =
+        laserScanMsg->ranges.size ?
+            (horizontalFov / 360.0f * laserScanMsg->scan_time) / static_cast<float>(laserScanMsg->ranges.size) :
+            0.0f;
 }
 
 Ros2LaserScanMessageImpl::~Ros2LaserScanMessageImpl()

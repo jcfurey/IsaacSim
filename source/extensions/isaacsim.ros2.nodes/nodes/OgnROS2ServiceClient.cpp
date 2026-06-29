@@ -163,7 +163,14 @@ public:
         // Write the request field/data from the node and compose a message
         isaacsim::ros2::omnigraph_utils::writeMessageDataFromNode(db, state.m_messageRequest, "Request:", false);
         state.m_serviceClient->sendRequest(state.m_messageRequest->getPtr());
-        state.m_serviceClient->takeResponse(state.m_messageResponse->getPtr());
+        // takeResponse() is a non-blocking poll: a response usually is not ready on
+        // the same tick the request is sent and arrives on a later tick. Only write
+        // the response outputs and fire execOut when a response was actually received,
+        // otherwise downstream sees the previous tick's stale response re-emitted.
+        if (!state.m_serviceClient->takeResponse(state.m_messageResponse->getPtr()))
+        {
+            return true;
+        }
         // write response of the node from server to the node outputs
         isaacsim::ros2::omnigraph_utils::writeNodeAttributeFromMessage(db, state.m_messageResponse, "Response:", true);
 

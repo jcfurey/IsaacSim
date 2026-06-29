@@ -126,7 +126,14 @@ bool Ros2SubscriberImpl::spin(void* msg)
         rcl_ret_t ret = rcl_take(m_subscription.get(), msg, &messageInfo, nullptr);
         if (ret != RCL_RET_OK)
         {
-            RCL_ERROR_MSG(spin, rcl_take);
+            // RCL_RET_SUBSCRIPTION_TAKE_FAILED is a benign race: rcl_wait reported the
+            // subscription ready but the middleware had no sample available by the time
+            // we took it. Treat it as "no message" rather than an error to avoid per-tick
+            // error spam under load; surface only genuine take failures.
+            if (ret != RCL_RET_SUBSCRIPTION_TAKE_FAILED)
+            {
+                RCL_ERROR_MSG(spin, rcl_take);
+            }
             return false;
         }
         return true;
