@@ -784,6 +784,10 @@ class Ros2RtxLidarGraph(MenuHelperWindow):
         tick_node = None
         context_node = None
         render_node = None
+        # Must be pre-initialized: it is only assigned inside the loop's elif, so a
+        # graph without a RunOneSimulationFrame node would otherwise raise
+        # UnboundLocalError at the `not run_once_node` check below.
+        run_once_node = None
         for node in all_nodes:
             node_path = node.get_prim_path()
             node_type = node.get_type_name()
