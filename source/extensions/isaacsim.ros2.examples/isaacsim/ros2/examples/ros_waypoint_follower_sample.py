@@ -72,10 +72,15 @@ class WaypointFollower(BaseResetNode):
         pose.pose.position.x = waypoint[0]
         pose.pose.position.y = waypoint[1]
         pose.pose.position.z = waypoint[2]
-        pose.pose.orientation.w = waypoint[3]
-        pose.pose.orientation.x = waypoint[4]
-        pose.pose.orientation.y = waypoint[5]
-        pose.pose.orientation.z = waypoint[6]
+        # OmniGraph/Fabric quaternions are stored (x, y, z, w), so the orientation
+        # array produced by GetMatrix4Quaternion -> ConstructArray is [x, y, z, w].
+        # (This matches the patrolling follower's create_pose_stamped_msg below; the
+        # previous (w, x, y, z) mapping here was a copy-paste bug that rotated every
+        # goal pose.)
+        pose.pose.orientation.x = waypoint[3]
+        pose.pose.orientation.y = waypoint[4]
+        pose.pose.orientation.z = waypoint[5]
+        pose.pose.orientation.w = waypoint[6]
         return pose
 
     def start_waypoint_follower(self):

@@ -150,7 +150,11 @@ public:
     bool serviceClient(OgnROS2ServiceClientDatabase& db, const GraphContextObj& context)
     {
         auto& state = db.perInstanceState<OgnROS2ServiceClient>();
-        if (!state.m_serviceClient->isValid())
+        // createClient() returns null when the service type support is unavailable
+        // (e.g. an unknown/typo'd service package). Guard the pointer before
+        // dereferencing it so a bad service type fails gracefully instead of
+        // segfaulting the whole simulator.
+        if (!state.m_serviceClient || !state.m_serviceClient->isValid())
         {
             db.logWarning("Service is invalid");
             return false;
