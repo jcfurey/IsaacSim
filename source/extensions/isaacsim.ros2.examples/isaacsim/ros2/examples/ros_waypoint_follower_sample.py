@@ -59,11 +59,18 @@ class WaypointFollower(BaseResetNode):
 
     def initialize_ros2_node(self):
         try:
-            rclpy.init()
+            # rclpy.init() raises if the context is already initialized (e.g. another
+            # node in this process started it); guard so the navigator is still created.
+            if not rclpy.ok():
+                rclpy.init()
             self._navigator = BasicNavigator()
-        except Exception:
-            pass
-        self.initialized = True
+            # Only mark initialized once the navigator actually exists; otherwise later
+            # code dereferences self._navigator (None) and raises AttributeError.
+            self.initialized = True
+        except Exception as e:
+            carb.log_error(f"Failed to initialize ROS 2 waypoint-follower node: {e}")
+            self._navigator = None
+            self.initialized = False
 
     def create_pose_stamped_msg(self, waypoint, frame_id):
         pose = PoseStamped()
@@ -72,10 +79,15 @@ class WaypointFollower(BaseResetNode):
         pose.pose.position.x = waypoint[0]
         pose.pose.position.y = waypoint[1]
         pose.pose.position.z = waypoint[2]
-        pose.pose.orientation.w = waypoint[3]
-        pose.pose.orientation.x = waypoint[4]
-        pose.pose.orientation.y = waypoint[5]
-        pose.pose.orientation.z = waypoint[6]
+        # OmniGraph/Fabric quaternions are stored (x, y, z, w), so the orientation
+        # array produced by GetMatrix4Quaternion -> ConstructArray is [x, y, z, w].
+        # (This matches the patrolling follower's create_pose_stamped_msg below; the
+        # previous (w, x, y, z) mapping here was a copy-paste bug that rotated every
+        # goal pose.)
+        pose.pose.orientation.x = waypoint[3]
+        pose.pose.orientation.y = waypoint[4]
+        pose.pose.orientation.z = waypoint[5]
+        pose.pose.orientation.w = waypoint[6]
         return pose
 
     def start_waypoint_follower(self):
@@ -227,11 +239,18 @@ class Patrolling(BaseResetNode):
 
     def initialize_ros2_node(self):
         try:
-            rclpy.init()
+            # rclpy.init() raises if the context is already initialized (e.g. another
+            # node in this process started it); guard so the navigator is still created.
+            if not rclpy.ok():
+                rclpy.init()
             self._navigator = BasicNavigator()
-        except Exception:
-            pass
-        self.initialized = True
+            # Only mark initialized once the navigator actually exists; otherwise later
+            # code dereferences self._navigator (None) and raises AttributeError.
+            self.initialized = True
+        except Exception as e:
+            carb.log_error(f"Failed to initialize ROS 2 waypoint-follower node: {e}")
+            self._navigator = None
+            self.initialized = False
 
     def create_pose_stamped_msg(self, waypoint, frame_id):
         pose = PoseStamped()

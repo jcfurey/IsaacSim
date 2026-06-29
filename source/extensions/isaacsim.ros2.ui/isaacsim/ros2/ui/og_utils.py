@@ -911,6 +911,16 @@ class Ros2TfPubGraph(MenuHelperWindow):
 
         else:
             ## if need to create a new tf node
+            # The CONNECT step below wires execIn/context/timeStamp from these nodes;
+            # if the target graph lacks any of them they are still None here and
+            # `None + ".outputs:..."` raises TypeError. Bail with a clear message.
+            if not tick_node or not context_node or not sim_time_node:
+                post_notification(
+                    f"Graph {self._og_path} is missing the tick, ROS2 context, or sim-time node needed to "
+                    "build the TF publisher graph. Use the tool to build a new graph instead.",
+                    status=NotificationStatus.WARNING,
+                )
+                return
             compute_tf_name = "Compute" + tf_pub_name
             og.Controller.edit(
                 graph_handle,

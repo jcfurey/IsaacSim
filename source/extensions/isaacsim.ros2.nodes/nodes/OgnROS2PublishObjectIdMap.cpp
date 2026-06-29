@@ -247,7 +247,10 @@ private:
             uint32_t labelLength = entry[4];
             uint32_t labelOffset = entry[5];
 
-            if (labelOffset + labelLength <= dataSize)
+            // Compute the bound in 64-bit: labelOffset + labelLength as uint32 can
+            // overflow and wrap to a small value that passes this check, letting the
+            // std::string read far out of bounds.
+            if (static_cast<uint64_t>(labelOffset) + labelLength <= dataSize)
             {
                 std::string label(reinterpret_cast<const char*>(data + labelOffset), labelLength);
                 // Remove trailing null characters

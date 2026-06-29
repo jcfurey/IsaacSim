@@ -60,6 +60,9 @@ class TFListener:
 
         self._node = None
         self._listener = None
+        # Initialized here so finalize() can run safely even if initialize() was never
+        # called or failed before creating the executor (otherwise AttributeError).
+        self._executor = None
 
     def initialize(self, distro: str) -> bool:
         """Initializes the ROS2 TF listener node and starts the executor thread.

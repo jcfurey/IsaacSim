@@ -64,15 +64,23 @@ public:
 
                 if (domainIdStr != nullptr)
                 {
-                    state.m_domainId = strtoul(domainIdStr, nullptr, 0);
-
-                    if (state.m_domainId == (std::numeric_limits<uint32_t>::max)())
+                    // Validate the parse explicitly: strtoul("abc") returns 0 with endptr
+                    // unmoved (the previous "== uint32 max" check never caught it, so
+                    // garbage silently selected domain 0), "5x" returns 5 with trailing
+                    // garbage, and out-of-range values must be rejected. Fall back to the
+                    // node's domain_id input on any of these rather than aborting context
+                    // creation. ROS 2 domain ids are 0-232 (FastDDS max).
+                    char* endptr = nullptr;
+                    unsigned long parsed = strtoul(domainIdStr, &endptr, 10);
+                    if (endptr == domainIdStr || *endptr != '\0' || parsed > 232UL)
                     {
-                        CARB_LOG_INFO("ROS_DOMAIN_ID: %s could not be interpreted as a legal number", domainIdStr);
-#ifdef _MSC_VER
-                        free(domainIdStr);
-#endif
-                        return false;
+                        CARB_LOG_WARN(
+                            "ROS_DOMAIN_ID: '%s' is not a valid domain id (expected 0-232); using input value %zd",
+                            domainIdStr, state.m_domainId);
+                    }
+                    else
+                    {
+                        state.m_domainId = static_cast<size_t>(parsed);
                     }
 #ifdef _MSC_VER
                     free(domainIdStr);

@@ -57,6 +57,11 @@ public:
             // Find our stage
             long stageId = context.iContext->getStageId(context);
             auto stage = pxr::UsdUtilsStageCache::Get().Find(pxr::UsdStageCache::Id::FromLongInt(stageId));
+            if (!stage)
+            {
+                db.logError("Could not find USD stage %ld", stageId);
+                return false;
+            }
 
             if (!state.initializeNodeHandle(
                     std::string(nodeObj.iNode->getPrimPath(nodeObj)),

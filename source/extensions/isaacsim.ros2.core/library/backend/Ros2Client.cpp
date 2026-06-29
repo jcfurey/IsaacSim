@@ -103,42 +103,49 @@ bool Ros2ClientImpl::sendRequest(void* requestMsg)
 
 bool Ros2ClientImpl::takeResponse(void* responseMsg)
 {
-    while (true)
+    // Single, non-blocking poll for a ready response. This is called once per
+    // compute() tick; a response that has not arrived yet is reported via
+    // RCL_RET_TIMEOUT and picked up on a later tick. The previous while(true)
+    // had no exit when rcl_wait reported the client ready but rcl_take_response
+    // kept failing (a benign middleware race), busy-spinning forever and hanging
+    // the compute thread.
+    if (!m_waitSetInitialized)
     {
-        rcl_ret_t rc = rcl_wait_set_clear(&m_waitSet);
-        if (rc != RCL_RET_OK)
+        // sendRequest() initializes the wait set; if it was never called (or
+        // failed), there is nothing to take.
+        return false;
+    }
+    rcl_ret_t rc = rcl_wait_set_clear(&m_waitSet);
+    if (rc != RCL_RET_OK)
+    {
+        RCL_ERROR_MSG(takeResponse, rcl_wait_set_clear);
+        return false;
+    }
+    rc = rcl_wait_set_add_client(&m_waitSet, m_client.get(), nullptr);
+    if (rc != RCL_RET_OK)
+    {
+        RCL_ERROR_MSG(takeResponse, rcl_wait_set_add_client);
+        return false;
+    }
+    rc = rcl_wait(&m_waitSet, 0);
+    if (rc == RCL_RET_TIMEOUT)
+    {
+        return false;
+    }
+    if (rc != RCL_RET_OK)
+    {
+        RCL_WARN_MSG(takeResponse, rcl_wait);
+        return false;
+    }
+    for (size_t i = 0; i < m_waitSet.size_of_clients; i++)
+    {
+        if (m_waitSet.clients[0])
         {
-            RCL_ERROR_MSG(sendRequest, rcl_wait_set_clear);
-            return false;
-        }
-        rc = rcl_wait_set_add_client(&m_waitSet, m_client.get(), nullptr);
-        if (rc != RCL_RET_OK)
-        {
-            RCL_ERROR_MSG(sendRequest, rcl_wait_set_add_subscription);
-            return false;
-        }
-        rc = rcl_wait(&m_waitSet, 0);
-        if (rc == RCL_RET_TIMEOUT)
-        {
-            return false;
-        }
-        if (rc != RCL_RET_OK)
-        {
-            // This keeps printing an error if the publisher is not active.
-            // Ideally only want to notify user once, when the subscription is created
-            RCL_WARN_MSG(takeResponse, rcl_wait);
-            return false;
-        }
-        for (size_t i = 0; i < m_waitSet.size_of_clients; i++)
-        {
-            if (m_waitSet.clients[0])
+            rmw_request_id_t requestId;
+            rc = rcl_take_response(m_client.get(), &requestId, responseMsg);
+            if (rc == RCL_RET_OK)
             {
-                rmw_request_id_t requestId;
-                rc = rcl_take_response(m_client.get(), &requestId, responseMsg);
-                if (rc == RCL_RET_OK)
-                {
-                    return true;
-                }
+                return true;
             }
         }
     }

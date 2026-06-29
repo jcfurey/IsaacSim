@@ -147,6 +147,14 @@ public:
     {
         auto& state = db.perInstanceState<OgnROS2ServiceServerRequest>();
         db.outputs.onReceived() = kExecutionAttributeStateDisabled;
+        // createService() returns null when the service type support is unavailable
+        // (e.g. an unknown/typo'd service package); guard before dereferencing so a
+        // bad service type fails gracefully instead of segfaulting the simulator.
+        if (!state.m_serviceServer)
+        {
+            db.logWarning("Service is invalid");
+            return false;
+        }
         if (state.m_serviceServer->takeRequest(state.m_messageRequest->getPtr()))
         {
             // Check if all sub-message size match size of actuators before setting data

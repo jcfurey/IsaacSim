@@ -1355,9 +1355,8 @@ class SimulationControl:
 
         This service steps the simulation forward by a specific number of frames,
         and then returns to a paused state. The simulation must be paused before
-        stepping can be performed.
-
-        Note: Single step (steps=1) is not currently supported. Please use 2 or more steps.
+        stepping can be performed. A single step (steps=1) is supported (and the
+        STEP_SIMULATION_SINGLE feature is advertised); only steps <= 0 is rejected.
 
         Args:
             request: StepSimulation request with number of steps
@@ -1895,10 +1894,12 @@ class SimulationControl:
                 await omni.kit.app.get_app().next_update_async()
 
                 carb.log_info(f"Loading world from USD file: {path_to_load}")
-                success, error = await stage_utils.open_stage_async(path_to_load)
+                # open_stage_async returns (success, stage_or_None); the second element
+                # is the opened Stage, not an error string, so don't surface it as one.
+                success, _opened_stage = await stage_utils.open_stage_async(path_to_load)
                 if not success:
                     response.result.result = response.RESOURCE_PARSE_ERROR
-                    response.result.error_message = f"Failed to load world: {error}"
+                    response.result.error_message = f"Failed to load world from '{path_to_load}'"
                     return response
             else:
                 response.result.result = response.RESOURCE_PARSE_ERROR
@@ -1962,7 +1963,13 @@ class SimulationControl:
                 )
                 return response
 
-            usdrt_stage = stage_utils.get_current_stage(backend="fabric")
+            # get_current_stage raises ValueError when no stage is loaded (it never
+            # returns None), so the NO_WORLD_LOADED case must be caught here -- the
+            # previous `if not usdrt_stage` branch was dead.
+            try:
+                usdrt_stage = stage_utils.get_current_stage(backend="fabric")
+            except ValueError:
+                usdrt_stage = None
             if not usdrt_stage:
                 carb.log_warn("No stage currently loaded")
                 response.result.result = response.NO_WORLD_LOADED

@@ -70,7 +70,19 @@ public:
             state.m_robotFront = pxr::GfVec3d(robotFrontVector[0], robotFrontVector[1], 0.0); // Z-component of zero
                                                                                               // will always be assumed
 
-            state.m_robotFront = pxr::GfGetNormalized(state.m_robotFront, 1.0f);
+            // Guard against a zero/degenerate robotFront: GfGetNormalized returns a
+            // zero vector when the length is below the epsilon, which would collapse
+            // the odometry frame (robotSide/robotUp cross-products go to zero) and
+            // silently zero out all twist projections. Default to +X forward instead.
+            if (state.m_robotFront.GetLength() < 1e-6)
+            {
+                db.logWarning("robotFront is zero/degenerate; defaulting to +X forward for odometry frame");
+                state.m_robotFront = pxr::GfVec3d(1.0, 0.0, 0.0);
+            }
+            else
+            {
+                state.m_robotFront.Normalize();
+            }
 
             if (state.m_zUp)
             {

@@ -52,7 +52,14 @@ void Ros2ContextHandleImpl::init(int argc, char const* const* argv, bool setDoma
                                                    if (nullptr != context->impl)
                                                    {
                                                        rcl_ret_t ret;
-                                                       if (this->isValid())
+                                                       // Check the context pointer passed to the deleter, not
+                                                       // this->isValid(): shutdown() invokes this deleter via
+                                                       // m_context.reset(), by which point the m_context member is
+                                                       // already empty, so isValid() would return false and skip
+                                                       // rcl_shutdown/rcl_context_fini -> leaked context + DDS
+                                                       // participant. (Using the local pointer also avoids touching a
+                                                       // possibly-destroyed `this`.)
+                                                       if (rcl_context_is_valid(context))
                                                        {
                                                            // shutdown first, if still valid
                                                            ret = rcl_shutdown(context);

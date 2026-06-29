@@ -147,11 +147,24 @@ public:
                     metadata.timestampPtr, metadata.emitterIdPtr, metadata.channelIdPtr, metadata.materialIdPtr,
                     metadata.tickIdPtr, metadata.hitNormalPtr, metadata.velocityPtr, metadata.objectIdPtr,
                     metadata.echoIdPtr, metadata.tickStatePtr, metadata.radialVelocityMSPtr);
-                // Data is on host as ogn data, copy from cpu
+                // Data is on host as ogn data, copy from cpu. Mirror the dataPtr branch:
+                // when metadata fields are enabled, point_step (and thus getTotalBytes())
+                // exceeds the xyz-only source size, so a raw memcpy would over-read the
+                // input buffer and emit a corrupt cloud. Interleave instead.
+                if (state.m_pub.getPointCloudMessage()->getOrderedFields().empty())
                 {
                     memcpy(state.m_pub.getPointCloudMessage()->getBufferPtr(),
                            reinterpret_cast<const uint8_t*>(db.inputs.data.cpu().data()),
                            state.m_pub.getPointCloudMessage()->getTotalBytes());
+                }
+                else
+                {
+                    isaacsim::ros2::nodes::fillPointCloudBufferHost(
+                        reinterpret_cast<uint8_t*>(state.m_pub.getPointCloudMessage()->getBufferPtr()),
+                        reinterpret_cast<const float3*>(db.inputs.data.cpu().data()),
+                        state.m_pub.getPointCloudMessage()->getOrderedFields(),
+                        state.m_pub.getPointCloudMessage()->getPointStep(),
+                        state.m_pub.getPointCloudMessage()->getNumPoints());
                 }
             }
 

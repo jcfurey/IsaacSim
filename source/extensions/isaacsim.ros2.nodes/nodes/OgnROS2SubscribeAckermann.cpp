@@ -107,26 +107,32 @@ public:
         auto accelerationHandle =
             accelerationAttr.iAttribute->getAttributeDataHandle(accelerationAttr, kAccordingToContextIndex);
         double* accelerationCommand = getDataW<double>(context, accelerationHandle);
-        *accelerationCommand = 0.0;
+        // getDataW can return null if the attribute handle is invalid during teardown;
+        // guard every output write below so reset() does not dereference null and crash.
+        if (accelerationCommand)
+            *accelerationCommand = 0.0;
 
         // For jerk
         AttributeObj jerkAttr = m_nodeObj.iNode->getAttribute(m_nodeObj, "outputs:jerk");
         auto jerkHandle = jerkAttr.iAttribute->getAttributeDataHandle(jerkAttr, kAccordingToContextIndex);
         double* jerkCommand = getDataW<double>(context, jerkHandle);
-        *jerkCommand = 0.0;
+        if (jerkCommand)
+            *jerkCommand = 0.0;
 
         // For speed
         AttributeObj speedAttr = m_nodeObj.iNode->getAttribute(m_nodeObj, "outputs:speed");
         auto speedHandle = speedAttr.iAttribute->getAttributeDataHandle(speedAttr, kAccordingToContextIndex);
         double* speedCommand = getDataW<double>(context, speedHandle);
-        *speedCommand = 0.0;
+        if (speedCommand)
+            *speedCommand = 0.0;
 
         // For steeringAngle
         AttributeObj steeringAngleAttr = m_nodeObj.iNode->getAttribute(m_nodeObj, "outputs:steeringAngle");
         auto steeringAngleHandle =
             steeringAngleAttr.iAttribute->getAttributeDataHandle(steeringAngleAttr, kAccordingToContextIndex);
         double* steeringAngleCommand = getDataW<double>(context, steeringAngleHandle);
-        *steeringAngleCommand = 0.0;
+        if (steeringAngleCommand)
+            *steeringAngleCommand = 0.0;
 
         // For steeringAngleVelocity
         AttributeObj steeringAngleVelocityAttr =
@@ -134,13 +140,15 @@ public:
         auto steeringAngleVelocityHandle = steeringAngleVelocityAttr.iAttribute->getAttributeDataHandle(
             steeringAngleVelocityAttr, kAccordingToContextIndex);
         double* steeringAngleVelocityCommand = getDataW<double>(context, steeringAngleVelocityHandle);
-        *steeringAngleVelocityCommand = 0.0;
+        if (steeringAngleVelocityCommand)
+            *steeringAngleVelocityCommand = 0.0;
 
         // For timeStamp
         AttributeObj timeStampAttr = m_nodeObj.iNode->getAttribute(m_nodeObj, "outputs:timeStamp");
         auto timeStampHandle = timeStampAttr.iAttribute->getAttributeDataHandle(timeStampAttr, kAccordingToContextIndex);
         double* timeStampCommand = getDataW<double>(context, timeStampHandle);
-        *timeStampCommand = 0.0;
+        if (timeStampCommand)
+            *timeStampCommand = 0.0;
 
 
         m_subscriber.reset(); // This should be reset before we reset the handle.
