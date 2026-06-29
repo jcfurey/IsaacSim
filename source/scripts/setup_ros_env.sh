@@ -33,19 +33,27 @@ if [ -f /etc/os-release ]; then
     fi
 fi
 
-# Check if ROS_DISTRO is set
+# Default ROS_DISTRO from the Ubuntu version when the caller did not set one.
 if [ -z "$ROS_DISTRO" ]; then
-    # Set ROS distro based on Ubuntu version
     export ROS_DISTRO="$DEFAULT_ROS_DISTRO"
-    
-    # Path to the ROS2 core extension
-    BRIDGE_EXT_PATH="$ISAAC_SIM_ROOT/exts/isaacsim.ros2.core"
+fi
 
-    # Update LD_LIBRARY_PATH to include the extension libraries
+# Add the bundled distro's libraries to LD_LIBRARY_PATH for the effective ROS_DISTRO.
+# This must run even when ROS_DISTRO was explicitly provided (e.g. forced via the
+# environment to pick a specific bundled distro in the Docker image); previously this
+# block only ran when ROS_DISTRO was unset, so forcing a distro silently left the
+# bridge libraries off the path and the ROS 2 bridge failed to load. Skip it when a
+# system ROS install is already on the path (the user sourced their own ROS), and
+# avoid adding the same directory twice.
+BRIDGE_EXT_PATH="$ISAAC_SIM_ROOT/exts/isaacsim.ros2.core"
+BUNDLED_LIB_DIR="$BRIDGE_EXT_PATH/$ROS_DISTRO/lib"
+if [ -d "$BUNDLED_LIB_DIR" ] && \
+   [[ ":$LD_LIBRARY_PATH:" != *":$BUNDLED_LIB_DIR:"* ]] && \
+   [[ ":$LD_LIBRARY_PATH:" != *"/opt/ros/"* ]]; then
     if [ -n "$LD_LIBRARY_PATH" ]; then
-        export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$BRIDGE_EXT_PATH/$ROS_DISTRO/lib"
+        export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$BUNDLED_LIB_DIR"
     else
-        export LD_LIBRARY_PATH="$BRIDGE_EXT_PATH/$ROS_DISTRO/lib"
+        export LD_LIBRARY_PATH="$BUNDLED_LIB_DIR"
     fi
 fi
 

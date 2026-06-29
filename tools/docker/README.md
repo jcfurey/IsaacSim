@@ -138,7 +138,7 @@ Use `prep_docker_build.sh` to prepare the Docker build context:
 1. **Build Verification**: Checks that `_build/$CONTAINER_PLATFORM/release` exists (required for Docker build)
 2. **Dependency Installation**: Installs Python requirements from `tools/docker/requirements.txt`
 3. **File Preparation**: Generates and runs an rsync script to copy necessary files to `_container_temp`
-4. **Data Copying**: Copies additional data from `tools/docker/data` and `tools/docker/oss`
+4. **Data Copying**: Copies additional data from `tools/docker/data`
 5. **Deduplication**: Finds duplicate files and replaces them with symlinks to reduce image size
 6. **Symlink Cleanup**: Fixes any chained symlinks that may have been created
 
@@ -546,7 +546,7 @@ If you run multiple Isaac Sim containers on the same host, give each one its own
 
 ### Using a FastDDS XML profile
 
-Mount your profile via an override compose file (`tools/docker/docker-compose.ros2.yml`):
+Mount your profile via an override compose file you create (for example `docker-compose.ros2.yml`):
 
 ```yaml
 services:
