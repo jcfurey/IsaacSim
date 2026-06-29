@@ -64,6 +64,11 @@ public:
             if (qosProfile.empty())
             {
                 qos.depth = db.inputs.queueSize();
+                // /clock is commonly published best-effort; the default RELIABLE
+                // subscriber is QoS-incompatible with such publishers (RxO rule) and
+                // would receive no clock at all. A best-effort request matches both
+                // best-effort and reliable publishers.
+                qos.reliability = Ros2QoSReliabilityPolicy::eBestEffort;
             }
             else
             {

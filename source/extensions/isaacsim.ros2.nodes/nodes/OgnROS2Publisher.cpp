@@ -369,7 +369,18 @@ public:
                     data->resize(arraySize);
                     for (size_t j = 0; j < arraySize; ++j)
                     {
-                        (*data)[j] = nlohmann::json::parse(db.tokenToString(*((*inputValue) + j)));
+                        // json::parse throws on a malformed token; that exception would
+                        // escape compute() and abort graph evaluation. Skip/zero the bad
+                        // element instead so one bad input does not take down the node.
+                        try
+                        {
+                            (*data)[j] = nlohmann::json::parse(db.tokenToString(*((*inputValue) + j)));
+                        }
+                        catch (const nlohmann::json::exception& e)
+                        {
+                            db.logWarning("Skipping non-JSON token in field '%s': %s", messageField.name.c_str(), e.what());
+                            (*data)[j] = nlohmann::json();
+                        }
                     }
                 }
                 break;

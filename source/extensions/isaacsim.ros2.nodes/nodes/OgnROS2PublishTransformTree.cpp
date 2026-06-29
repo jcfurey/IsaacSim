@@ -327,6 +327,14 @@ public:
         m_publisher.reset(); // This should be reset before we reset the handle.
         Ros2Node::reset();
         m_poseTree.reset();
+        // Release the simulation view (created via TensorApi::createSimulationView);
+        // reset() previously leaked it on every stop/play cycle. Done after
+        // m_poseTree.reset() since the pose tree was built against this view.
+        if (m_simView)
+        {
+            m_simView->release(true);
+            m_simView = nullptr;
+        }
         m_firstIteration = true;
         m_useExternalData = false;
     }
