@@ -1355,9 +1355,8 @@ class SimulationControl:
 
         This service steps the simulation forward by a specific number of frames,
         and then returns to a paused state. The simulation must be paused before
-        stepping can be performed.
-
-        Note: Single step (steps=1) is not currently supported. Please use 2 or more steps.
+        stepping can be performed. A single step (steps=1) is supported (and the
+        STEP_SIMULATION_SINGLE feature is advertised); only steps <= 0 is rejected.
 
         Args:
             request: StepSimulation request with number of steps
