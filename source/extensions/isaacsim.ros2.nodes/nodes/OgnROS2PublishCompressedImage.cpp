@@ -98,12 +98,6 @@ public:
         CARB_PROFILE_ZONE(1, "[IsaacSim] publish compressed image function");
         auto& state = db.perInstanceState<OgnROS2PublishCompressedImage>();
 
-        {
-            CARB_PROFILE_ZONE(1, "[IsaacSim] wait for previous publish");
-            // Wait for last message to publish before starting next
-            state.m_tasks.wait();
-        }
-
         // Check if subscription count is 0
         if (!state.m_publishWithoutVerification && !state.m_publisher.get()->getSubscriptionCount())
         {
@@ -160,12 +154,6 @@ public:
 
     void reset() override
     {
-        {
-            CARB_PROFILE_ZONE(1, "[IsaacSim] wait for previous publish");
-            // Wait for last message to publish before starting next
-            m_tasks.wait();
-        }
-
         m_publisher.reset(); // This should be reset before we reset the handle.
         Ros2Node::reset();
     }
@@ -175,8 +163,6 @@ private:
     std::shared_ptr<Ros2CompressedImageMessage> m_message = nullptr;
 
     std::string m_frameId = "sim_camera";
-
-    carb::tasking::TaskGroup m_tasks;
 };
 
 REGISTER_OGN_NODE()
