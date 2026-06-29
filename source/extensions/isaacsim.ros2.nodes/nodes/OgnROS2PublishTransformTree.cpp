@@ -200,11 +200,13 @@ public:
         bool isStaticPublisher = db.inputs.staticPublisher();
         if (isStaticPublisher)
         {
+            // Only consume the one-shot flag after a successful publish (see below).
+            // Clearing it here would permanently silence the static publisher if the
+            // first tick bailed out on empty/mismatched transform data.
             if (!state.m_firstIteration)
             {
                 return false;
             }
-            state.m_firstIteration = false;
         }
         else
         {
@@ -307,6 +309,9 @@ public:
         state.m_message->writeData(time, m_transforms);
         state.m_publisher.get()->publish(state.m_message->getPtr());
 
+        // A static publisher publishes exactly once; consume the flag only now that
+        // a publish has actually happened.
+        state.m_firstIteration = false;
         return true;
     }
 

@@ -1779,10 +1779,15 @@ class SimulationControl:
         except asyncio.CancelledError:
             # Cancelled mid-step (e.g. the executor callback timeout fired).
             # CancelledError bypasses `except Exception`; pause synchronously so the
-            # timeline is not left playing, then propagate the cancellation.
+            # timeline is not left playing, mark the goal terminal (aborted) so it does
+            # not dangle in EXECUTING, then propagate the cancellation.
             try:
                 self.timeline.pause()
                 self.timeline.commit()
+            except Exception:
+                pass
+            try:
+                goal_handle.abort()
             except Exception:
                 pass
             raise

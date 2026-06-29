@@ -126,12 +126,13 @@ public:
 
     static bool useSensorInputs(OgnROS2PublishJointStateDatabase& db)
     {
-        const size_t nNames = db.inputs.jointNames().size();
-        const size_t nPos = db.inputs.jointPositions().size();
-        const size_t nVel = db.inputs.jointVelocities().size();
-        const size_t nEff = db.inputs.jointEfforts().size();
-        const size_t nTypes = db.inputs.jointDofTypes().size();
-        return (nNames > 0 || nPos > 0 || nVel > 0 || nEff > 0 || nTypes > 0);
+        // Gate on jointNames only: it is the required key that
+        // validateAndGatherSensorInputs() enforces (all other arrays must match its
+        // length). Triggering on any array being non-empty (an OR) would route a
+        // partial connection -- e.g. only jointPositions wired -- into the sensor
+        // path, where validation then fails with a logError every tick instead of
+        // falling back to targetPrim or the "specify inputs" message.
+        return db.inputs.jointNames().size() > 0;
     }
 
     static bool validateAndGatherSensorInputs(OgnROS2PublishJointStateDatabase& db,
