@@ -205,6 +205,8 @@ public:
                     const auto& data = *std::static_pointer_cast<const std::vector<bool>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<bool*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
+                    if (!outputValue)
+                        break;
                     // std::vector<bool> is a specialization that has no ::data
                     for (size_t j = 0; j < data.size(); ++j)
                     {
@@ -214,7 +216,8 @@ public:
                 else
                 {
                     auto outputValue = _getAttributeWritableData<bool>(db.abi_node(), "outputs:" + messageField.name);
-                    *outputValue = *std::static_pointer_cast<const bool>(messageData.at(i));
+                    if (outputValue)
+                        *outputValue = *std::static_pointer_cast<const bool>(messageData.at(i));
                 }
                 break;
             }
@@ -225,12 +228,14 @@ public:
                     const auto& data = *std::static_pointer_cast<const std::vector<uint8_t>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<uint8_t*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
-                    std::memcpy(*outputValue, data.data(), data.size() * sizeof(uint8_t));
+                    if (outputValue)
+                        std::memcpy(*outputValue, data.data(), data.size() * sizeof(uint8_t));
                 }
                 else
                 {
                     auto outputValue = _getAttributeWritableData<uint8_t>(db.abi_node(), "outputs:" + messageField.name);
-                    *outputValue = *std::static_pointer_cast<const uint8_t>(messageData.at(i));
+                    if (outputValue)
+                        *outputValue = *std::static_pointer_cast<const uint8_t>(messageData.at(i));
                 }
                 break;
             }
@@ -241,12 +246,14 @@ public:
                     const auto& data = *std::static_pointer_cast<const std::vector<int32_t>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<int32_t*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
-                    std::memcpy(*outputValue, data.data(), data.size() * sizeof(int32_t));
+                    if (outputValue)
+                        std::memcpy(*outputValue, data.data(), data.size() * sizeof(int32_t));
                 }
                 else
                 {
                     auto outputValue = _getAttributeWritableData<int32_t>(db.abi_node(), "outputs:" + messageField.name);
-                    *outputValue = *std::static_pointer_cast<const int32_t>(messageData.at(i));
+                    if (outputValue)
+                        *outputValue = *std::static_pointer_cast<const int32_t>(messageData.at(i));
                 }
                 break;
             }
@@ -257,12 +264,14 @@ public:
                     const auto& data = *std::static_pointer_cast<const std::vector<uint32_t>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<uint32_t*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
-                    std::memcpy(*outputValue, data.data(), data.size() * sizeof(uint32_t));
+                    if (outputValue)
+                        std::memcpy(*outputValue, data.data(), data.size() * sizeof(uint32_t));
                 }
                 else
                 {
                     auto outputValue = _getAttributeWritableData<uint32_t>(db.abi_node(), "outputs:" + messageField.name);
-                    *outputValue = *std::static_pointer_cast<const uint32_t>(messageData.at(i));
+                    if (outputValue)
+                        *outputValue = *std::static_pointer_cast<const uint32_t>(messageData.at(i));
                 }
                 break;
             }
@@ -273,12 +282,14 @@ public:
                     const auto& data = *std::static_pointer_cast<const std::vector<int64_t>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<int64_t*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
-                    std::memcpy(*outputValue, data.data(), data.size() * sizeof(int64_t));
+                    if (outputValue)
+                        std::memcpy(*outputValue, data.data(), data.size() * sizeof(int64_t));
                 }
                 else
                 {
                     auto outputValue = _getAttributeWritableData<int64_t>(db.abi_node(), "outputs:" + messageField.name);
-                    *outputValue = *std::static_pointer_cast<const int64_t>(messageData.at(i));
+                    if (outputValue)
+                        *outputValue = *std::static_pointer_cast<const int64_t>(messageData.at(i));
                 }
                 break;
             }
@@ -289,12 +300,14 @@ public:
                     const auto& data = *std::static_pointer_cast<const std::vector<uint64_t>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<uint64_t*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
-                    std::memcpy(*outputValue, data.data(), data.size() * sizeof(uint64_t));
+                    if (outputValue)
+                        std::memcpy(*outputValue, data.data(), data.size() * sizeof(uint64_t));
                 }
                 else
                 {
                     auto outputValue = _getAttributeWritableData<uint64_t>(db.abi_node(), "outputs:" + messageField.name);
-                    *outputValue = *std::static_pointer_cast<const uint64_t>(messageData.at(i));
+                    if (outputValue)
+                        *outputValue = *std::static_pointer_cast<const uint64_t>(messageData.at(i));
                 }
                 break;
             }
@@ -310,12 +323,14 @@ public:
                     const auto& data = *std::static_pointer_cast<const std::vector<float>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<float*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
-                    std::memcpy(*outputValue, data.data(), data.size() * sizeof(float));
+                    if (outputValue)
+                        std::memcpy(*outputValue, data.data(), data.size() * sizeof(float));
                 }
                 else
                 {
                     auto outputValue = _getAttributeWritableData<float>(db.abi_node(), "outputs:" + messageField.name);
-                    *outputValue = *std::static_pointer_cast<const float>(messageData.at(i));
+                    if (outputValue)
+                        *outputValue = *std::static_pointer_cast<const float>(messageData.at(i));
                 }
                 break;
             }
@@ -326,12 +341,14 @@ public:
                     const auto& data = *std::static_pointer_cast<const std::vector<double>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<double*>(
                         db.abi_node(), "outputs:" + messageField.name, data.size());
-                    std::memcpy(*outputValue, data.data(), data.size() * sizeof(double));
+                    if (outputValue)
+                        std::memcpy(*outputValue, data.data(), data.size() * sizeof(double));
                 }
                 else
                 {
                     auto outputValue = _getAttributeWritableData<double>(db.abi_node(), "outputs:" + messageField.name);
-                    *outputValue = *std::static_pointer_cast<const double>(messageData.at(i));
+                    if (outputValue)
+                        *outputValue = *std::static_pointer_cast<const double>(messageData.at(i));
                 }
                 break;
             }
@@ -342,6 +359,8 @@ public:
                     const auto& stringValues = *std::static_pointer_cast<const std::vector<std::string>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<NameToken*>(
                         db.abi_node(), "outputs:" + messageField.name, stringValues.size());
+                    if (!outputValue)
+                        break;
                     for (size_t j = 0; j < stringValues.size(); ++j)
                     {
                         *((*outputValue) + j) = db.stringToToken(stringValues.at(j).c_str());
@@ -352,7 +371,8 @@ public:
                     const auto& stringValue = *std::static_pointer_cast<const std::string>(messageData.at(i));
                     auto outputValue =
                         _getAttributeWritableData<NameToken>(db.abi_node(), "outputs:" + messageField.name);
-                    *outputValue = db.stringToToken(stringValue.c_str());
+                    if (outputValue)
+                        *outputValue = db.stringToToken(stringValue.c_str());
                 }
                 break;
             }
@@ -363,6 +383,8 @@ public:
                     const auto& array = *std::static_pointer_cast<const std::vector<nlohmann::json>>(messageData.at(i));
                     auto outputValue = _getAttributeWritableArrayData<NameToken*>(
                         db.abi_node(), "outputs:" + messageField.name, array.size());
+                    if (!outputValue)
+                        break;
                     for (size_t j = 0; j < array.size(); ++j)
                     {
                         *((*outputValue) + j) = db.stringToToken(array.at(j).dump().c_str());
