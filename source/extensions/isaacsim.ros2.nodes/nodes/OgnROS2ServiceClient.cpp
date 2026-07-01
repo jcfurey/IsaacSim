@@ -122,7 +122,14 @@ public:
         {
             // Setup ROS ServiceServer
             const std::string& currentServiceName = db.inputs.serviceName();
-            std::string fullServiceName = addTopicPrefix(db.inputs.nodeNamespace(), currentServiceName);
+            // Use the already-collected namespace (state.m_namespaceName, set from
+            // collectNamespace() in initializeNodeHandle() above), not the raw
+            // nodeNamespace input: the node's rcl handle was created under the
+            // collected namespace, so building the service name from the raw input
+            // instead loses any namespace inherited from a parent prim's
+            // isaac:namespace attribute, unlike OgnROS2ServicePrim's equivalent
+            // service names.
+            std::string fullServiceName = addTopicPrefix(state.m_namespaceName, currentServiceName);
             if (!state.m_factory->validateTopicName(fullServiceName))
             {
                 db.logWarning("No Valid service name : %s", fullServiceName.c_str());

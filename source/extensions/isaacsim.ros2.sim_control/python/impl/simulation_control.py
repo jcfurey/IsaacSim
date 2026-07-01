@@ -1453,10 +1453,15 @@ class SimulationControl:
 
         """
         try:
+            from builtin_interfaces.msg import Time
             from simulation_interfaces.msg import Result
 
-            # Get entity state using external helper function
-            entity_state, error, status_code = await get_entity_state(request.entity)
+            # Get entity state using external helper function. Stamp with the current
+            # simulation time so header.stamp reflects when the state was sampled,
+            # instead of the EntityState default (zero).
+            sim_time = self.timeline.get_current_time()
+            stamp = Time(sec=int(sim_time), nanosec=int((sim_time - int(sim_time)) * 1e9))
+            entity_state, error, status_code = await get_entity_state(request.entity, stamp=stamp)
 
             if error:
                 response.result = Result(result=status_code, error_message=error)
@@ -1493,7 +1498,14 @@ class SimulationControl:
 
         """
         try:
+            from builtin_interfaces.msg import Time
             from simulation_interfaces.msg import Result
+
+            # Stamp every entity in this batch with the same sample time (a single
+            # snapshot instant for the whole response), rather than the EntityState
+            # default (zero).
+            sim_time = self.timeline.get_current_time()
+            stamp = Time(sec=int(sim_time), nanosec=int((sim_time - int(sim_time)) * 1e9))
 
             # Initialize response lists
             response.entities = []
@@ -1520,7 +1532,7 @@ class SimulationControl:
             # Process each filtered entity to get its state
             for entity_path in filtered_entities:
                 # Get entity state using external helper function
-                entity_state, error, _ = await get_entity_state(entity_path)
+                entity_state, error, _ = await get_entity_state(entity_path, stamp=stamp)
 
                 # Add to entities list regardless of state retrieval success
                 response.entities.append(entity_path)

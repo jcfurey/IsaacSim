@@ -88,7 +88,7 @@ def get_filtered_entities(usdrt_stage: object, filter_pattern: str | None = None
     return filtered_paths, ""
 
 
-async def get_entity_state(entity_path: str) -> tuple[object | None, str, int]:
+async def get_entity_state(entity_path: str, stamp: object | None = None) -> tuple[object | None, str, int]:
     """Get state for a single entity.
 
     This function retrieves the complete state information for a specified entity,
@@ -97,6 +97,9 @@ async def get_entity_state(entity_path: str) -> tuple[object | None, str, int]:
 
     Args:
         entity_path: Path to the entity as a string.
+        stamp: Timestamp (a builtin_interfaces.msg.Time, or object with matching
+            sec/nanosec fields) to use for the returned state's header.stamp. If
+            None, the header stamp is left at its zero/default value.
 
     Returns:
         Tuple containing entity state, error message, and status code.
@@ -131,9 +134,11 @@ async def get_entity_state(entity_path: str) -> tuple[object | None, str, int]:
         # Extract just the name part from the full path
         frame_id = prim.GetName()
 
-    # Initialize the entity state
+    # Initialize the entity state. header.stamp defaults to zero/uninitialized
+    # (the simulation_interfaces.msg.EntityState default) unless a caller supplies
+    # the current sim/wall time via `stamp`.
     entity_state = EntityState()
-    entity_state.header = Header(frame_id=frame_id, stamp=Header().stamp)
+    entity_state.header = Header(frame_id=frame_id, stamp=(stamp if stamp is not None else Header().stamp))
 
     # Check for PhysicsRigidBodyAPI
     applied_apis = prim.GetAppliedSchemas()

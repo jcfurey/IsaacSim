@@ -114,7 +114,10 @@ public:
         {
             // Setup ROS ServiceServer
             const std::string& currentServiceName = db.inputs.serviceName();
-            std::string fullServiceName = addTopicPrefix(db.inputs.nodeNamespace(), currentServiceName);
+            // Use the already-collected namespace (state.m_namespaceName, set from
+            // collectNamespace() in initializeNodeHandle() above), not the raw
+            // nodeNamespace input: see the identical fix in OgnROS2ServiceClient.cpp.
+            std::string fullServiceName = addTopicPrefix(state.m_namespaceName, currentServiceName);
             if (!state.m_factory->validateTopicName(fullServiceName))
             {
                 db.logWarning("No Valid Topic : %s", fullServiceName.c_str());
