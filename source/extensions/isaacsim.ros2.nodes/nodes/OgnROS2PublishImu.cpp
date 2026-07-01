@@ -138,7 +138,11 @@ public:
         }
         else
         {
-            auto& orientation = db.inputs.orientation();
+            // Normalize before publishing: the input may come from interpolation/composition
+            // upstream (e.g. slerp, quaternion multiplication) and is not guaranteed to be
+            // unit-length. tf2 and most ROS2 consumers reject or mishandle non-normalized
+            // quaternions. GetNormalized() falls back to identity if the length is ~0.
+            const pxr::GfQuatd orientation = db.inputs.orientation().GetNormalized();
             std::vector<double> orientationVector{ orientation.GetImaginary()[0], orientation.GetImaginary()[1],
                                                    orientation.GetImaginary()[2], orientation.GetReal() };
             state.m_message->writeOrientation(false, orientationVector);

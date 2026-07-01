@@ -59,7 +59,8 @@ public:
           cudaDeviceIndex(-1),
           stream(nullptr),
           streamDevice(nullptr),
-          mStreamNotCreated(nullptr)
+          mStreamNotCreated(nullptr),
+          instanceKey(nullptr)
     {
     }
 
@@ -78,6 +79,12 @@ public:
 
     std::shared_ptr<Ros2Publisher> publisher;
     std::shared_ptr<Ros2ImageMessage> message;
+
+    // Identifies which OgnROS2PublishImage instance this job belongs to (the address of that
+    // instance's state object). Used by PublishImageWorkerThread::drainInstance() so a node
+    // instance can wait for only *its own* in-flight/queued jobs before it tears down its
+    // CUDA stream and message/publisher, without stopping the shared worker thread.
+    const void* instanceKey;
 };
 
 class PublishNitrosBridgeImageThreadData
@@ -138,6 +145,15 @@ public:
         m_queueThreadSleepUs = durationUs;
     }
 
+    // Registers a node instance as an active user of the shared worker thread. Must be paired
+    // with exactly one release() call from the same node instance (see release()). This is what
+    // lets us tell whether *any* node instance still needs the worker before tearing it down.
+    void addRef()
+    {
+        std::unique_lock<carb::thread::mutex> lock(m_queueMutex);
+        ++m_refCount;
+    }
+
     void enqueueAndStart(const PublishImageThreadData& data)
     {
         {
@@ -157,7 +173,74 @@ public:
         m_queueCondition.notify_one();
     }
 
-    void shutdown()
+    // Releases this node instance's claim on the shared worker. The worker thread is only
+    // actually joined and torn down once the last registered instance releases it, so one
+    // node instance being reset/deleted (e.g. on timeline stop, or graph edits) cannot stall
+    // or drop in-flight publishes for other node instances still sharing this worker.
+    void release()
+    {
+        std::unique_lock<carb::thread::mutex> lock(m_queueMutex);
+        if (m_refCount == 0)
+        {
+            // release() without a matching addRef(), or already released - nothing to do.
+            return;
+        }
+        if (--m_refCount > 0)
+        {
+            // Other node instances are still using the shared worker thread; keep it alive.
+            return;
+        }
+        lock.unlock();
+        shutdownLocked();
+    }
+
+    // Blocks until no job belonging to `instanceKey` remains queued or in-flight on the shared
+    // worker. Must be called before a node instance destroys the CUDA stream / message /
+    // publisher that its queued PublishImageThreadData entries point to, since those entries
+    // are only safe to process while the owning instance is still alive. Safe to call even if
+    // this instance never enqueued anything (returns immediately) or the worker was never
+    // started.
+    void drainInstance(const void* instanceKey)
+    {
+        std::unique_lock<carb::thread::mutex> lock(m_queueMutex);
+        m_drainCondition.wait(lock,
+                              [this, instanceKey]
+                              {
+                                  if (m_currentInstance == instanceKey)
+                                  {
+                                      return false;
+                                  }
+                                  // Scan the queue for any remaining job owned by this instance.
+                                  // The queue is only ever a handful of frames deep, so this is cheap.
+                                  std::queue<PublishImageThreadData> pending = m_publishQueue;
+                                  while (!pending.empty())
+                                  {
+                                      if (pending.front().instanceKey == instanceKey)
+                                      {
+                                          return false;
+                                      }
+                                      pending.pop();
+                                  }
+                                  return true;
+                              });
+    }
+
+private:
+    PublishImageWorkerThread() = default;
+    ~PublishImageWorkerThread()
+    {
+        shutdownLocked();
+    }
+
+    PublishImageWorkerThread(const PublishImageWorkerThread&) = delete;
+    PublishImageWorkerThread& operator=(const PublishImageWorkerThread&) = delete;
+
+    void _workerThreadFunction();
+
+    // Unconditionally stops and joins the worker thread. Only to be called once the caller has
+    // established (via the refcount, or during static destruction) that no instance still needs
+    // the worker.
+    void shutdownLocked()
     {
         {
             std::unique_lock<carb::thread::mutex> lock(m_queueMutex);
@@ -174,29 +257,30 @@ public:
             m_workerThread.join();
         }
 
-        std::unique_lock<carb::thread::mutex> lock(m_queueMutex);
-        m_workerThreadCreated = false;
-        m_workerThreadShutdown = false;
+        {
+            std::unique_lock<carb::thread::mutex> lock(m_queueMutex);
+            m_workerThreadCreated = false;
+            m_workerThreadShutdown = false;
+        }
+        // Wake up any drainInstance() waiter: the worker is gone, so no instanceKey can ever
+        // become "in-flight" again and any remaining queued jobs will never be processed.
+        m_drainCondition.notify_all();
     }
-
-private:
-    PublishImageWorkerThread() = default;
-    ~PublishImageWorkerThread()
-    {
-        shutdown();
-    }
-
-    PublishImageWorkerThread(const PublishImageWorkerThread&) = delete;
-    PublishImageWorkerThread& operator=(const PublishImageWorkerThread&) = delete;
-
-    void _workerThreadFunction();
 
     std::queue<PublishImageThreadData> m_publishQueue;
     carb::thread::mutex m_queueMutex;
     std::condition_variable_any m_queueCondition;
+    // Notified whenever a job finishes processing or the queue changes, so drainInstance() can
+    // re-check whether the instance it is waiting on still has queued/in-flight work.
+    std::condition_variable_any m_drainCondition;
     std::thread m_workerThread;
     bool m_workerThreadShutdown = false;
     bool m_workerThreadCreated = false;
+    // Number of node instances currently relying on this shared worker thread.
+    int m_refCount = 0;
+    // instanceKey of the job currently being processed by the worker thread (outside the queue),
+    // or nullptr if the worker is idle. Guarded by m_queueMutex.
+    const void* m_currentInstance = nullptr;
     // How long the queue thread sleeps between publishes
     int64_t m_queueThreadSleepUs = 1000; // Default: 1ms = 1000us
 };
@@ -253,6 +337,14 @@ public:
             if (queueThreadSleepUs > 0)
             {
                 PublishImageWorkerThread::getInstance().setQueueThreadSleepUs(queueThreadSleepUs);
+            }
+            if (state.m_publishWithQueueThread && !state.m_registeredWithWorker)
+            {
+                // Register this instance as a user of the process-wide shared worker thread so
+                // that another node instance's reset()/deletion cannot tear the worker down out
+                // from under us (see PublishImageWorkerThread::release()).
+                PublishImageWorkerThread::getInstance().addRef();
+                state.m_registeredWithWorker = true;
             }
             // Get extension settings for nitros bridge
             static constexpr char s_kNitrosBridgeEnabled[] = "/exts/isaacsim.ros2.bridge/enable_nitros_bridge";
@@ -419,6 +511,10 @@ public:
 
         threadData.publisher = state.m_publisher;
         threadData.message = state.m_message;
+
+        // Identify the owning instance so reset() can wait for exactly this instance's queued
+        // work (see PublishImageWorkerThread::drainInstance()) before freeing m_stream/m_message.
+        threadData.instanceKey = &state;
 
         return threadData;
     }
@@ -804,6 +900,10 @@ void PublishImageWorkerThread::_workerThreadFunction()
             {
                 data = m_publishQueue.front();
                 m_publishQueue.pop();
+                // Mark this instance as "in-flight" (no longer just queued) so a concurrent
+                // drainInstance() call for this instanceKey keeps waiting until publishImageHelper()
+                // below actually finishes, instead of returning as soon as the queue looks empty.
+                m_currentInstance = data.instanceKey;
             }
             else
             {
@@ -813,6 +913,12 @@ void PublishImageWorkerThread::_workerThreadFunction()
 
         // Process the request without holding the lock
         OgnROS2PublishImage::publishImageHelper(data);
+
+        {
+            std::unique_lock<carb::thread::mutex> lock(m_queueMutex);
+            m_currentInstance = nullptr;
+        }
+        m_drainCondition.notify_all();
 
         // Configurable delay with no resources held.  This is done to allow other higher priority threads to run
         // between publish tasks.

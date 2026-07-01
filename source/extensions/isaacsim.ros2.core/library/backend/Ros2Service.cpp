@@ -113,7 +113,16 @@ bool Ros2ServiceImpl::takeRequest(void* requestMsg)
         rc = rcl_take_request(m_service.get(), &m_requestId, requestMsg);
         if (rc != RCL_RET_OK)
         {
-            RCL_ERROR_MSG(takeRequest, rcl_take_request);
+            // RCL_RET_SERVICE_TAKE_FAILED is a benign race: rcl_wait reported the
+            // service ready but the middleware had no sample available by the time
+            // we took it (mirrors the equivalent fix in Ros2SubscriberImpl::spin and
+            // Ros2ClientImpl::takeResponse). Treat it as "no request" rather than an
+            // error to avoid per-tick error log spam under load; surface only genuine
+            // take failures.
+            if (rc != RCL_RET_SERVICE_TAKE_FAILED)
+            {
+                RCL_ERROR_MSG(takeRequest, rcl_take_request);
+            }
             return false;
         }
         return true;

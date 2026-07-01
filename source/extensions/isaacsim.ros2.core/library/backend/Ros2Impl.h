@@ -404,6 +404,8 @@ public:
      * @param[in] position Robot's position vector
      * @param[in] orientation Robot's orientation quaternion
      * @param[in] publishRawVelocities Whether to publish raw velocities
+     * @param[in] poseCovariance Row-major 6x6 pose covariance (36 elements); left as all-zero default if empty
+     * @param[in] twistCovariance Row-major 6x6 twist covariance (36 elements); left as all-zero default if empty
      */
     virtual void writeData(std::string& childFrame,
                            const pxr::GfVec3d& linearVelocity,
@@ -414,7 +416,9 @@ public:
                            double unitScale,
                            const pxr::GfVec3d& position,
                            const pxr::GfQuatd& orientation,
-                           bool publishRawVelocities);
+                           bool publishRawVelocities,
+                           const std::vector<double>& poseCovariance,
+                           const std::vector<double>& twistCovariance);
 };
 
 /**
@@ -1235,6 +1239,25 @@ protected:
     void getArrayEmbeddedMessage(const rosidl_typesupport_introspection_c__MessageMember* member,
                                  uint8_t* data,
                                  nlohmann::json& array);
+
+    /**
+     * @brief Sets a `rosidl_runtime_c__String__Sequence` array from a vector of strings.
+     * @details
+     * Unlike the generic numeric _setArray() overloads, string sequence elements cannot be
+     * populated with a plain struct assignment: `rosidl_runtime_c__String__Sequence__init()`
+     * heap-allocates an empty-string buffer for every element it creates, and a raw
+     * `dest->data[i] = ...` assignment would overwrite (and thus leak) that buffer instead of
+     * freeing it. This helper deep-copies each string into the (already-initialized)
+     * destination element via `rosidl_runtime_c__String__assign()`, which internally reuses/
+     * reallocates the existing buffer instead of leaking it.
+     *
+     * @param[in] member Pointer to the message member definition
+     * @param[out] data Pointer to the message data
+     * @param[in] array Vector of strings to assign
+     */
+    void _setStringArray(const rosidl_typesupport_introspection_c__MessageMember* member,
+                         uint8_t* data,
+                         const std::vector<std::string>& array);
 
     /**
      * @brief Sets array of embedded messages from JSON

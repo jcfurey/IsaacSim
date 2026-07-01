@@ -25,6 +25,7 @@
 #include <rcl/rcl.h>
 #include <sensor_msgs/msg/camera_info.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -49,6 +50,19 @@ namespace core
         }                                                                                                              \
         if (sequence.capacity < requiredSize)                                                                          \
         {                                                                                                              \
+            FiniFn(&sequence);                                                                                         \
+            return InitFn(&sequence, requiredSize);                                                                    \
+        }                                                                                                              \
+        if (requiredSize < sequence.size)                                                                              \
+        {                                                                                                              \
+            /* Shrinking within the existing capacity: several element types this macro is */                         \
+            /* instantiated for (String, TransformStamped, PointField) own nested heap buffers */                     \
+            /* (e.g. rosidl_runtime_c__String::data) per element. Simply truncating `size` would */                   \
+            /* drop the last (size - requiredSize) elements without finalizing them, leaking their */                 \
+            /* owned buffers on every tick the count decreases (e.g. fewer joints/transforms/point */                 \
+            /* fields than the previous tick, but still within the previously grown capacity). */                     \
+            /* Fully finalize + reinitialize at the smaller size to guarantee no leak for any */                      \
+            /* instantiation, at the cost of the reuse optimization on shrink-only ticks. */                           \
             FiniFn(&sequence);                                                                                         \
             return InitFn(&sequence, requiredSize);                                                                    \
         }                                                                                                              \
@@ -127,6 +141,16 @@ inline bool ensureSeqSizeDynamicWithInnerFini(LibraryLike& library,
         }
         library.template callSymbolWithArg<void>(parentFiniSymbol, &parentSequence);
         return library.template callSymbolWithArg<bool>(parentInitSymbol, &parentSequence, requiredSize);
+    }
+    // Existing capacity covers the new size: reuse the buffer in place. If this shrinks the
+    // sequence (e.g. fewer detections on this tick than the last one, within the same
+    // allocation), the elements being dropped (indices [requiredSize, parentSequence.size))
+    // still own heap-allocated inner sequences that must be finalized here -- otherwise they
+    // become unreachable once `size` is truncated, leaking on every tick the count decreases.
+    for (size_t i = requiredSize; i < parentSequence.size; ++i)
+    {
+        auto& inner = getInnerSequence(parentSequence.data[i]);
+        library.template callSymbolWithArg<void>(innerFiniSymbol, &inner);
     }
     parentSequence.size = requiredSize;
     return true;
@@ -968,7 +992,9 @@ void Ros2OdometryMessageImpl::writeData(std::string& childFrame,
                                         double unitScale,
                                         const pxr::GfVec3d& position,
                                         const pxr::GfQuatd& orientation,
-                                        bool publishRawVelocities)
+                                        bool publishRawVelocities,
+                                        const std::vector<double>& poseCovariance,
+                                        const std::vector<double>& twistCovariance)
 {
     if (!m_msg)
     {
@@ -978,6 +1004,23 @@ void Ros2OdometryMessageImpl::writeData(std::string& childFrame,
 
     // Assign child frame ID
     Ros2MessageInterfaceImpl::writeRosString(childFrame, odometryMsg->child_frame_id);
+
+    // pose.covariance / twist.covariance are fixed-size double[36] C arrays that are otherwise
+    // never written anywhere in this class, so they stay at the create()-time default of
+    // all-zero. All-zero covariance is not a neutral/"unknown" value to most ROS2 consumers
+    // (e.g. robot_localization) -- it is read as "this estimate is exact", which can bias
+    // downstream sensor fusion. Only overwrite when the caller actually supplies a matching
+    // 6x6 (36-element) matrix; otherwise preserve the previous all-zero behavior exactly.
+    constexpr size_t kCovarianceSize = sizeof(odometryMsg->pose.covariance) / sizeof(odometryMsg->pose.covariance[0]);
+    static_assert(kCovarianceSize == 36, "nav_msgs/Odometry covariance is expected to have 36 elements");
+    if (poseCovariance.size() == kCovarianceSize)
+    {
+        std::copy(poseCovariance.begin(), poseCovariance.end(), odometryMsg->pose.covariance);
+    }
+    if (twistCovariance.size() == kCovarianceSize)
+    {
+        std::copy(twistCovariance.begin(), twistCovariance.end(), odometryMsg->twist.covariance);
+    }
 
     if (publishRawVelocities)
     {

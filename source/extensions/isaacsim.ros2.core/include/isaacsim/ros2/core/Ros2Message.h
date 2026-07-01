@@ -669,6 +669,14 @@ public:
      * @param[in] orientation Orientation.
      * @param[in] publishRawVelocities If enabled, raw velocities are published. Otherwise velocities are projected in
      * the robot frame before being published.
+     * @param[in] poseCovariance Row-major 6x6 pose covariance matrix (36 elements). If empty, the message's
+     * `pose.covariance` is left at its default (all zero), matching previous behavior.
+     * @param[in] twistCovariance Row-major 6x6 twist covariance matrix (36 elements). If empty, the message's
+     * `twist.covariance` is left at its default (all zero), matching previous behavior.
+     *
+     * @note nav_msgs/Odometry has no reserved "unknown covariance" sentinel (unlike sensor_msgs/Imu, which uses -1
+     * in element 0). Leaving covariance at all-zero tells consumers (e.g. robot_localization) that the estimate is
+     * exact, which can bias sensor fusion; callers that care about this should supply real covariance values here.
      */
     virtual void writeData(std::string& childFrame,
                            const pxr::GfVec3d& linearVelocity,
@@ -679,7 +687,9 @@ public:
                            double unitScale,
                            const pxr::GfVec3d& position,
                            const pxr::GfQuatd& orientation,
-                           bool publishRawVelocities) = 0;
+                           bool publishRawVelocities,
+                           const std::vector<double>& poseCovariance = {},
+                           const std::vector<double>& twistCovariance = {}) = 0;
 };
 
 /**

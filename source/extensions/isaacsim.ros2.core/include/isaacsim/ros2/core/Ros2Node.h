@@ -122,10 +122,24 @@ public:
      */
     bool initializeNodeHandle(const std::string& nodeName, const std::string& namespaceName, uint64_t contextHandleAddr)
     {
-        // Handle is initialized, so we should be ok, return true
+        // Handle is initialized: normally we are done, but the OgnROS2Context node can
+        // shut down and re-init its rcl_context_t out from under every other node that
+        // holds a raw Ros2ContextHandle* into it (e.g. on a domain_id change -- see
+        // OgnROS2Context::compute()/shutdown()). m_nodeHandle/its subscribers/clients/
+        // services keep wait sets and an rcl_node_t bound to that now-finalized context,
+        // so continuing to use them is a use-after-free. Detect that and rebuild instead
+        // of trusting a cached handle blindly.
         if (m_nodeHandle)
         {
-            return true;
+            if (m_contextHandle && *m_contextHandle && (*m_contextHandle)->isValid())
+            {
+                return true;
+            }
+            // Context was shut down since this node handle was created: drop the stale
+            // node handle (and let derived classes' own reset() drop their
+            // publishers/subscribers/etc. first, per the existing convention) so the
+            // block below re-creates everything against the current context.
+            m_nodeHandle.reset();
         }
 
         // Handle is not valid, try to initialize handle.
@@ -194,6 +208,16 @@ public:
      * Prepends the specified prefix to a topic name, ensuring proper
      * separator character (/) placement between prefix and topic name.
      *
+     * If @p topicName is already an explicit ROS 2 namespace-escaped name --
+     * absolute (leading `/`) or node-private (leading `~`) -- it is returned
+     * unchanged (only trimmed of surrounding whitespace/junk after the
+     * escape character). This matches `rclcpp`/`rclpy` behavior, where an
+     * absolute or private name always bypasses any namespace remapping, and
+     * lets multi-robot setups explicitly opt a single topic out of the
+     * per-node namespace prefix (e.g. a shared `/clock` topic) without the
+     * leading character being silently stripped and the name incorrectly
+     * renamespaced.
+     *
      * @param[in] prefix Prefix to add to the topic name
      * @param[in] topicName Original topic name
      * @return std::string The prefixed topic name
@@ -205,6 +229,15 @@ public:
         if (topicName.empty())
         {
             return std::string("");
+        }
+        // Absolute ('/...') and private ('~...') names are explicit ROS 2
+        // namespace escapes: preserve the leading character and leave the
+        // rest of the name untouched by the namespace prefix, only trimming
+        // stray non-alnum junk from the tail.
+        if (topicName.front() == '/' || topicName.front() == '~')
+        {
+            const std::string rest = trimNonAlnum(topicName.substr(1));
+            return rest.empty() ? std::string(1, topicName.front()) : topicName.front() + rest;
         }
         return prefix + std::string("/") + trimNonAlnum(topicName);
     }

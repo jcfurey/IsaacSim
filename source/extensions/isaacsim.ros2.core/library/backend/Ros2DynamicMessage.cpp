@@ -504,10 +504,21 @@ void Ros2DynamicMessageImpl::setArrayEmbeddedMessage(const rosidl_typesupport_in
     auto embeddedMembers =
         reinterpret_cast<const rosidl_typesupport_introspection_c__MessageMembers*>(member->members_->data);
     // non-fixed size array
-    // TODO: check for sequence capacity
     if (member->is_upper_bound_ || !member->array_size_)
     {
-        member->resize_function(data, array.size());
+        // The generated resize_function() unconditionally finalizes and reinitializes the whole
+        // sub-message sequence (fini() + init()), even when the requested size matches the
+        // current size. That is safe (no leak/double-free: fini() fully tears down every element
+        // before init() recreates them) but wasteful: it is called every publish tick, so for a
+        // hot-path publisher with a stable-size sub-message array (e.g. detections/fields) this
+        // means a full heap free+alloc (recursively finalizing/reinitializing every element, and
+        // any strings/arrays nested within) each tick even though nothing about the size changed.
+        // Skip the resize call in that case: get_function()/setMessageValues() below can then
+        // safely overwrite the existing elements in place.
+        if (member->size_function(data) != array.size())
+        {
+            member->resize_function(data, array.size());
+        }
         for (size_t i = 0; i < array.size(); ++i)
         {
             setMessageValues(embeddedMembers, reinterpret_cast<uint8_t*>(member->get_function(data, i)), array.at(i));
@@ -752,6 +763,45 @@ void Ros2DynamicMessageImpl::_setArray(const rosidl_typesupport_introspection_c_
         for (size_t i = 0; i < member->array_size_; ++i)
         {
             *reinterpret_cast<RosType*>(&data[i * sizeof(RosType)]) = i < array.size() ? array.at(i) : RosType{};
+        }
+    }
+}
+
+void Ros2DynamicMessageImpl::_setStringArray(const rosidl_typesupport_introspection_c__MessageMember* member,
+                                             uint8_t* data,
+                                             const std::vector<std::string>& array)
+{
+    // non-fixed size array
+    if (member->is_upper_bound_ || !member->array_size_)
+    {
+        auto* dest = reinterpret_cast<rosidl_runtime_c__String__Sequence*>(data);
+        // Finalize before re-init to avoid leaking the previously allocated buffer
+        // (each element's `data` pointer, plus the sequence's own storage).
+        if (dest->data != nullptr)
+        {
+            rosidl_runtime_c__String__Sequence__fini(dest);
+        }
+        // `__Sequence__init` allocates `array.size()` elements and default-constructs each one
+        // via `rosidl_runtime_c__String__init` (empty string, own heap buffer). Do NOT overwrite
+        // those elements with a raw struct assignment afterwards: that would orphan (leak) the
+        // buffer `__init` just allocated. Instead, deep-copy into the already-initialized
+        // element with `__assign`, which reuses/reallocates its existing buffer.
+        rosidl_runtime_c__String__Sequence__init(dest, array.size());
+        for (size_t i = 0; i < dest->size; ++i)
+        {
+            rosidl_runtime_c__String__assign(&dest->data[i], array.at(i).c_str());
+        }
+    }
+    // fixed size array
+    else
+    {
+        // Fixed-size string arrays are already default-initialized (one rosidl_runtime_c__String
+        // per slot, each owning its own buffer) by the message's generated `__init`. Deep-copy
+        // into each existing element instead of overwriting the struct (which would leak it).
+        auto* dest = reinterpret_cast<rosidl_runtime_c__String*>(data);
+        for (size_t i = 0; i < member->array_size_; ++i)
+        {
+            rosidl_runtime_c__String__assign(&dest[i], i < array.size() ? array.at(i).c_str() : "");
         }
     }
 }
@@ -1511,13 +1561,7 @@ void Ros2DynamicMessageImpl::setMessageValues(const void* members, uint8_t* mess
             if (member->is_array_)
             {
                 std::vector<std::string> array = value;
-                std::vector<rosidl_runtime_c__String> rosArray(array.size());
-                for (size_t j = 0; j < array.size(); ++j)
-                {
-                    rosidl_runtime_c__String__assign(&rosArray.at(j), array.at(j).c_str());
-                }
-                _setArray<rosidl_runtime_c__String__Sequence, rosidl_runtime_c__String__Sequence__init,
-                          rosidl_runtime_c__String__Sequence__fini, rosidl_runtime_c__String>(member, data, rosArray);
+                _setStringArray(member, data, array);
             }
             else
             {
@@ -1769,13 +1813,7 @@ void Ros2DynamicMessageImpl::setMessageValues(const void* members,
             if (member->is_array_)
             {
                 auto array = std::static_pointer_cast<std::vector<std::string>>(valuePtr);
-                std::vector<rosidl_runtime_c__String> rosArray(array->size());
-                for (size_t j = 0; j < array->size(); ++j)
-                {
-                    rosidl_runtime_c__String__assign(&rosArray.at(j), array->at(j).c_str());
-                }
-                _setArray<rosidl_runtime_c__String__Sequence, rosidl_runtime_c__String__Sequence__init,
-                          rosidl_runtime_c__String__Sequence__fini, rosidl_runtime_c__String>(member, data, rosArray);
+                _setStringArray(member, data, *array);
             }
             else
             {

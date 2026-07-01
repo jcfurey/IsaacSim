@@ -139,13 +139,22 @@ bool Ros2ClientImpl::takeResponse(void* responseMsg)
     }
     for (size_t i = 0; i < m_waitSet.size_of_clients; i++)
     {
-        if (m_waitSet.clients[0])
+        if (m_waitSet.clients[i])
         {
             rmw_request_id_t requestId;
             rc = rcl_take_response(m_client.get(), &requestId, responseMsg);
             if (rc == RCL_RET_OK)
             {
                 return true;
+            }
+            // RCL_RET_CLIENT_TAKE_FAILED is a benign race: rcl_wait reported the
+            // client ready but the middleware had no sample available by the time
+            // we took it (mirrors Ros2SubscriberImpl::spin / Ros2ServiceImpl::takeRequest).
+            // Stay quiet for it; surface only genuine take failures instead of
+            // silently swallowing every non-OK return.
+            if (rc != RCL_RET_CLIENT_TAKE_FAILED)
+            {
+                RCL_ERROR_MSG(takeResponse, rcl_take_response);
             }
         }
     }
