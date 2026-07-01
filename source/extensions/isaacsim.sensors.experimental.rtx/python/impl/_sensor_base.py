@@ -399,6 +399,16 @@ class _SensorRuntime:
     _AUTHORING_CLASS: type
     _AUTHORING_ATTR: str
 
+    # Render product resolution for GMO-based sensors (lidar/radar/acoustic).
+    # These sensors never consume the 2D image -- their output arrives via the
+    # GenericModelOutput AOV -- but every render product still allocates its
+    # resolution-scaled pipeline buffers per sensor instance. Keep this at the
+    # minimum (matching the isaacsim.sensors.rtx.nodes documentation, which
+    # creates sensor render products at (1, 1)) so per-sensor VRAM is not
+    # wasted on pixels nobody reads. CameraSensor overrides _initialize_sensor
+    # with a real, user-provided resolution and does not use this constant.
+    _RENDER_PRODUCT_RESOLUTION: tuple[int, int] = (1, 1)
+
     def __init__(
         self,
         path: str | _SensorAuthoring,
@@ -410,6 +420,7 @@ class _SensorRuntime:
         # define properties early so __del__ is safe if __init__ raises
         self._hydra_texture = None
         self._annotators = {}
+        self._annotator_devices = {}
         self._writers = {}
         if not hasattr(self, "_annotators_spec"):
             self._annotators_spec = dict(ANNOTATOR_SPEC)
@@ -438,7 +449,33 @@ class _SensorRuntime:
                 self.attach_writer(spec["name"], **spec.get("defaults", {}))
 
     def __del__(self) -> None:
-        """Clean up instance."""
+        """Clean up instance.
+
+        Garbage collection timing is not deterministic (and reference cycles
+        can delay it indefinitely), so prefer calling :meth:`destroy`
+        explicitly when the sensor's GPU resources should be released at a
+        known point.
+        """
+        self._invalidate_sensor()
+
+    def destroy(self) -> None:
+        """Release the sensor's runtime resources deterministically.
+
+        Detaches all writers and annotators and destroys the render product
+        (hydra texture), freeing the associated GPU memory. Relying on
+        ``__del__`` alone leaves this to garbage-collection timing -- a sensor
+        object caught in a reference cycle keeps its render product (and its
+        VRAM) alive until the cycle collector runs, or forever at interpreter
+        shutdown. This method is idempotent: calling it more than once (or
+        letting ``__del__`` run afterwards) is safe. The instance must not be
+        used for data retrieval after calling this method.
+
+        Example:
+
+        .. code-block:: python
+
+            >>> sensor.destroy()  # doctest: +NO_CHECK
+        """
         self._invalidate_sensor()
 
     @property
@@ -503,6 +540,9 @@ class _SensorRuntime:
             instance = rep.AnnotatorRegistry.get_annotator(spec["name"], device=device, do_array_copy=False)
             instance.attach(self._hydra_texture.path)
             self._annotators[annotator] = instance
+            # remember the device the annotator was created with so get_data()
+            # can fetch on that same device instead of forcing a transfer
+            self._annotator_devices[annotator] = device
             attached[annotator] = instance
 
         return attached
@@ -525,6 +565,7 @@ class _SensorRuntime:
                 continue
             self._annotators[annotator].detach([self._hydra_texture.path])
             del self._annotators[annotator]
+            self._annotator_devices.pop(annotator, None)
 
     def get_data(self, annotator: str) -> tuple[wp.array | None, dict[str, Any]]:
         """Fetch the specified annotator/sensor data for the sensor.
@@ -544,7 +585,15 @@ class _SensorRuntime:
         self._validate_annotators(annotator)
         if annotator not in self._annotators:
             raise ValueError(f"The annotator '{annotator}' was not configured. Enable it when instantiating the class")
-        data = self._annotators[annotator].get_data("cuda")
+        # Fetch on the device the annotator was created with (see
+        # attach_annotators): the CPU-side annotators (generic-model-output,
+        # stable-id-map) produce host data that callers immediately consume on
+        # the host (e.g. parse_generic_model_output_data -> .numpy()), so the
+        # previous hardcoded "cuda" fetch allocated a fresh CUDA buffer and did
+        # a host-to-device copy per call only for the data to be copied straight
+        # back -- growing the CUDA allocator pool with every poll for no benefit.
+        device = self._annotator_devices.get(annotator, "cuda")
+        data = self._annotators[annotator].get_data(device)
         if isinstance(data, dict):
             info = data["info"]
             data = data["data"]
@@ -612,6 +661,7 @@ class _SensorRuntime:
             self._hydra_texture.destroy()
         self._writers = {}
         self._annotators = {}
+        self._annotator_devices = {}
         self._hydra_texture = None
 
     def _initialize_sensor(self, annotators: str | list[str], *, render_vars: list[str] | None = None) -> None:
@@ -623,7 +673,10 @@ class _SensorRuntime:
         """
         self._hydra_texture = rep.create.render_product(
             camera=self.authoring_object.paths[0],
-            resolution=(300, 300),  # (width, height), needed but unused by the RTX sensor
+            # (width, height): required by the render product but never read by
+            # GMO-based RTX sensors -- see _RENDER_PRODUCT_RESOLUTION for why
+            # this is kept at the minimum.
+            resolution=self._RENDER_PRODUCT_RESOLUTION,
             name=f"rtx_sensor_{hash(self)}",
             render_vars=render_vars,
         )
