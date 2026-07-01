@@ -528,6 +528,20 @@ class SimulationControl:
         self.timeline = omni.timeline.get_timeline_interface()
         self.service_manager = ROS2ServiceManager()
         self.is_initialized = False
+        # Guards every direct self.timeline.play()/pause()/stop()/commit() call.
+        # Action cancel_callbacks are registered unwrapped (see
+        # ROS2ServiceManager.register_action_server: execute_callback is routed
+        # through _wrap_async_callback onto the main-thread event loop, but
+        # cancel_callback is not), so _handle_simulate_steps_cancel_callback runs
+        # synchronously on a raw MultiThreadedExecutor worker thread -- a genuine
+        # cross-thread race against every other handler's timeline calls, which
+        # otherwise only interleave cooperatively on the main thread's loop.
+        # omni.timeline.ITimeline has no documented thread-safety guarantee for
+        # concurrent mutation. Always acquire/release within a single synchronous
+        # block; NEVER hold it across an `await` (the one event-loop thread also
+        # has to run every other coroutine, so blocking it would stall everything
+        # scheduled on that loop).
+        self._timeline_lock = threading.Lock()
 
         # Import interfaces using helper method
         self._import_interfaces(SERVICE_TYPES, "service")
@@ -695,20 +709,28 @@ class SimulationControl:
 
             target_state = request.state.state
 
+            # self._timeline_lock serializes this check-then-act against every other
+            # handler's direct timeline calls (see the comment in __init__), so a
+            # concurrently-dispatched request can't flip play/pause/stop state
+            # between the is_playing() check and the mutation below.
             if target_state == SimulationState.STATE_PLAYING:
-                if not self.timeline.is_playing():
-                    self.timeline.play()
+                with self._timeline_lock:
+                    if not self.timeline.is_playing():
+                        self.timeline.play()
                 response.result = Result(result=Result.RESULT_OK, error_message="")
             elif target_state == SimulationState.STATE_PAUSED:
-                if self.timeline.is_playing():
-                    self.timeline.pause()
+                with self._timeline_lock:
+                    if self.timeline.is_playing():
+                        self.timeline.pause()
                 response.result = Result(result=Result.RESULT_OK, error_message="")
             elif target_state == SimulationState.STATE_STOPPED:
-                self.timeline.stop()
+                with self._timeline_lock:
+                    self.timeline.stop()
                 response.result = Result(result=Result.RESULT_OK, error_message="")
             elif target_state == SimulationState.STATE_QUITTING:
                 # First stop the simulation timeline
-                self.timeline.stop()
+                with self._timeline_lock:
+                    self.timeline.stop()
 
                 # Schedule application quit
                 carb.log_warn("Shutting down Isaac Sim via STATE_QUITTING request")
@@ -1314,7 +1336,8 @@ class SimulationControl:
 
             # First stop the simulation
             carb.log_info("Stopping simulation")
-            self.timeline.stop()
+            with self._timeline_lock:
+                self.timeline.stop()
 
             # Wait for one app update cycle to ensure stop is fully processed
             await omni.kit.app.get_app().next_update_async()
@@ -1340,7 +1363,8 @@ class SimulationControl:
             await omni.kit.app.get_app().next_update_async()
 
             # Start the timeline again
-            self.timeline.play()
+            with self._timeline_lock:
+                self.timeline.play()
             carb.log_info("Simulation reset completed successfully")
 
         except Exception as e:
@@ -1379,18 +1403,21 @@ class SimulationControl:
                 response.result.error_message = "Steps must be a positive integer"
                 return response
 
-            # Ensure simulation is in paused state before stepping
-            if self.timeline.is_playing():
-                response.result.result = Result.RESULT_INCORRECT_STATE
-                response.result.error_message = (
-                    "Cannot step simulation while it is playing. Pause the simulation first."
-                )
-                return response
-
-            # Get application instance
+            # Ensure simulation is in paused state before stepping. The check and
+            # the play() below are done under one lock acquisition so a
+            # concurrently-dispatched request can't start/stop the timeline between
+            # the check and the mutation (see self._timeline_lock in __init__).
             app = omni.kit.app.get_app()
-            self.timeline.play()
-            self.timeline.commit()
+            with self._timeline_lock:
+                if self.timeline.is_playing():
+                    response.result.result = Result.RESULT_INCORRECT_STATE
+                    response.result.error_message = (
+                        "Cannot step simulation while it is playing. Pause the simulation first."
+                    )
+                    return response
+
+                self.timeline.play()
+                self.timeline.commit()
 
             # Step through the requested number of frames
             for i in range(steps):
@@ -1398,8 +1425,9 @@ class SimulationControl:
                 await app.next_update_async()
 
             # Pause the simulation when done
-            self.timeline.pause()
-            self.timeline.commit()
+            with self._timeline_lock:
+                self.timeline.pause()
+                self.timeline.commit()
             # Ensure the pause takes effect
             await app.next_update_async()
             await app.next_update_async()
@@ -1417,8 +1445,9 @@ class SimulationControl:
             # await, which could re-raise during unwinding) so we never leave the
             # timeline playing, then propagate the cancellation.
             try:
-                self.timeline.pause()
-                self.timeline.commit()
+                with self._timeline_lock:
+                    self.timeline.pause()
+                    self.timeline.commit()
             except Exception:
                 pass
             raise
@@ -1426,8 +1455,9 @@ class SimulationControl:
         except Exception as e:
             # Ensure simulation is paused if an error occurs
             try:
-                self.timeline.pause()
-                self.timeline.commit()
+                with self._timeline_lock:
+                    self.timeline.pause()
+                    self.timeline.commit()
                 await app.next_update_async()
             except Exception:
                 pass
@@ -1732,18 +1762,21 @@ class SimulationControl:
                 goal_handle.abort()
                 return result_msg
 
-            # Ensure simulation is in paused state before stepping
-            if self.timeline.is_playing():
-                result_msg.result.result = Result.RESULT_INCORRECT_STATE
-                result_msg.result.error_message = (
-                    "Cannot step simulation while it is playing. Pause the simulation first."
-                )
-                goal_handle.abort()
-                return result_msg
-
-            # Get application instance
+            # Ensure simulation is in paused state before stepping. The check and
+            # the play() below are done under one lock acquisition so a
+            # concurrently-dispatched request can't start/stop the timeline between
+            # the check and the mutation (see self._timeline_lock in __init__).
             app = omni.kit.app.get_app()
-            self.timeline.play()
+            with self._timeline_lock:
+                if self.timeline.is_playing():
+                    result_msg.result.result = Result.RESULT_INCORRECT_STATE
+                    result_msg.result.error_message = (
+                        "Cannot step simulation while it is playing. Pause the simulation first."
+                    )
+                    goal_handle.abort()
+                    return result_msg
+
+                self.timeline.play()
 
             # Initialize feedback
             feedback_msg.completed_steps = 0
@@ -1759,7 +1792,8 @@ class SimulationControl:
                     return result_msg
 
                 # Commit the timeline to ensure changes are applied
-                self.timeline.commit()
+                with self._timeline_lock:
+                    self.timeline.commit()
 
                 # Wait for the frame to process
                 await app.next_update_async()
@@ -1774,8 +1808,9 @@ class SimulationControl:
                 carb.log_info(f"Completed step {i+1}/{steps}")
 
             # Pause the simulation when done
-            self.timeline.pause()
-            self.timeline.commit()
+            with self._timeline_lock:
+                self.timeline.pause()
+                self.timeline.commit()
 
             # Ensure the pause takes effect
             await app.next_update_async()
@@ -1793,8 +1828,9 @@ class SimulationControl:
             # timeline is not left playing, mark the goal terminal (aborted) so it does
             # not dangle in EXECUTING, then propagate the cancellation.
             try:
-                self.timeline.pause()
-                self.timeline.commit()
+                with self._timeline_lock:
+                    self.timeline.pause()
+                    self.timeline.commit()
             except Exception:
                 pass
             try:
@@ -1806,8 +1842,9 @@ class SimulationControl:
         except Exception as e:
             # Ensure simulation is paused if an error occurs
             try:
-                self.timeline.pause()
-                self.timeline.commit()
+                with self._timeline_lock:
+                    self.timeline.pause()
+                    self.timeline.commit()
                 await app.next_update_async()
                 await app.next_update_async()
             except Exception:
@@ -1837,10 +1874,14 @@ class SimulationControl:
 
             carb.log_info("SimulateSteps action cancellation requested")
 
-            # Pause the simulation immediately when cancellation is requested
+            # Pause the simulation immediately when cancellation is requested. This
+            # callback runs synchronously on a raw executor thread (see the comment
+            # on self._timeline_lock in __init__), concurrently with every other
+            # handler's timeline calls on the main thread -- take the lock.
             try:
-                self.timeline.pause()
-                self.timeline.commit()
+                with self._timeline_lock:
+                    self.timeline.pause()
+                    self.timeline.commit()
                 carb.log_info("Simulation paused due to SimulateSteps cancellation")
             except Exception as pause_error:
                 carb.log_error(f"Error pausing simulation during cancellation: {pause_error}")
@@ -1902,7 +1943,8 @@ class SimulationControl:
 
                 # Stop the simulation first
                 carb.log_info("Stopping simulation before loading world")
-                self.timeline.stop()
+                with self._timeline_lock:
+                    self.timeline.stop()
                 await omni.kit.app.get_app().next_update_async()
 
                 carb.log_info(f"Loading world from USD file: {path_to_load}")
@@ -1989,7 +2031,8 @@ class SimulationControl:
                 return response
 
             # Stop the simulation first
-            self.timeline.stop()
+            with self._timeline_lock:
+                self.timeline.stop()
             await omni.kit.app.get_app().next_update_async()
 
             # Create a new empty stage
