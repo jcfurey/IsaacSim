@@ -233,6 +233,15 @@ public:
         }
         const char* primPath = omni::fabric::toSdfPath(prim[0]).GetText();
         state.m_unitScale = UsdGeomGetStageMetersPerUnit(stage);
+        // The sensor-input path validates this (validateAndGatherSensorInputs); this
+        // legacy targetPrim path trusted the stage metadata unguarded. A malformed
+        // stage (metersPerUnit <= 0 or non-finite) would silently corrupt every
+        // published position/velocity by this scale factor.
+        if (state.m_unitScale <= 0.0 || !std::isfinite(state.m_unitScale))
+        {
+            db.logError("Stage metersPerUnit must be a positive finite value.");
+            return false;
+        }
         if (!state.m_simView)
         {
             state.m_simView = state.m_tensorInterface->createSimulationView(

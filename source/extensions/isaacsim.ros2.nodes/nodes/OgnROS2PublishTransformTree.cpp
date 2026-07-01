@@ -100,6 +100,15 @@ public:
                     "Connect OgnIsaacComputeTransformTree to inputs:parentFrames/childFrames/translations/orientations instead.");
                 state.m_useExternalData = false;
 
+                // initInstance() logs and returns if TensorApi acquisition failed, but does
+                // not itself prevent compute() from running; m_tensorInterface stays null in
+                // that case and this deprecated path dereferences it unconditionally.
+                if (!state.m_tensorInterface)
+                {
+                    db.logError("Tensor Api interface is not available; cannot compute transforms internally");
+                    return false;
+                }
+
                 state.m_simView = state.m_tensorInterface->createSimulationView(
                     state.m_stageId, isaacsim::core::includes::getActivePhysicsEngineName());
                 if (!state.m_simView)
