@@ -55,6 +55,11 @@ class WaypointFollower(BaseResetNode):
     def __init__(self, db: og.Database):
         self._navigator = None
         self._db = db
+        # custom_reset() runs on the main thread (simulation stop / node release)
+        # while start_waypoint_follower() runs on a background thread; without
+        # this lock, custom_reset() can destroy_node()/null out self._navigator
+        # while the background thread is mid-call on the same navigator object.
+        self._navigator_lock = threading.Lock()
         super().__init__(initialize=False)
 
     def initialize_ros2_node(self):
@@ -63,7 +68,12 @@ class WaypointFollower(BaseResetNode):
             # node in this process started it); guard so the navigator is still created.
             if not rclpy.ok():
                 rclpy.init()
-            self._navigator = BasicNavigator()
+            # namespace is "" for a single-robot graph (matching BasicNavigator's
+            # own default) or a graph-path-derived namespace for a multi-robot
+            # instance (see _create_ros_action_graph), so each robot's navigator
+            # gets its own ROS 2 node name and action/topic namespace instead of
+            # colliding with every other robot's.
+            self._navigator = BasicNavigator(namespace=self._db.inputs.namespace)
             # Only mark initialized once the navigator actually exists; otherwise later
             # code dereferences self._navigator (None) and raises AttributeError.
             self.initialized = True
@@ -92,10 +102,13 @@ class WaypointFollower(BaseResetNode):
 
     def start_waypoint_follower(self):
         try:
-            # Avoid setting bogus initial pose
-            self._navigator.initial_pose_received = True
-            # Wait until the full navigation system is up and running.
-            self._navigator.waitUntilNav2Active()
+            with self._navigator_lock:
+                if self._navigator is None:
+                    return
+                # Avoid setting bogus initial pose
+                self._navigator.initial_pose_received = True
+                # Wait until the full navigation system is up and running.
+                self._navigator.waitUntilNav2Active()
         except Exception as e:
             post_notification("WaypointFollower Stopped!", status=NotificationStatus.WARNING)
             return
@@ -119,18 +132,35 @@ class WaypointFollower(BaseResetNode):
         post_notification("Moving towards waypoint", status=NotificationStatus.INFO)
 
         try:
-            # Call NavigateToPose action server with a goal/waypoint
-            self._navigator.goToPose(waypoint)
+            with self._navigator_lock:
+                if self._navigator is None:
+                    return
+                # Call NavigateToPose action server with a goal/waypoint
+                self._navigator.goToPose(waypoint)
             time_diff = 10
             past_time = time.time()
 
-            # Check if task is completed or not
-            while not self._navigator.isTaskComplete():
-                feedback = self._navigator.getFeedback()
+            # Check if task is completed or not. custom_reset() (main thread) can
+            # destroy_node()/null out self._navigator between iterations, so every
+            # navigator access here is re-acquired under the lock and re-checked
+            # for None instead of holding the lock across the whole poll loop
+            # (which would block a real Stop-simulation reset for the loop's
+            # entire duration).
+            while True:
+                with self._navigator_lock:
+                    if self._navigator is None:
+                        return
+                    task_complete = self._navigator.isTaskComplete()
+                    feedback = None if task_complete else self._navigator.getFeedback()
+                if task_complete:
+                    break
                 if time.time() - past_time > time_diff:
                     post_notification(f'{feedback}', status=NotificationStatus.INFO)
                     past_time = time.time()
-            result = self._navigator.getResult()
+            with self._navigator_lock:
+                if self._navigator is None:
+                    return
+                result = self._navigator.getResult()
         except Exception as e:
             post_notification("WaypointFollower Stopped!", status=NotificationStatus.WARNING)
             return
@@ -138,15 +168,18 @@ class WaypointFollower(BaseResetNode):
             # unlock for next goal
             self._db.per_instance_state.lock = False
 
-            if result == TaskResult.SUCCEEDED:
-                post_notification("Goal succeeded", status=NotificationStatus.INFO)
-                self._navigator.get_logger().info("Goal succeeded")
-            elif result == TaskResult.CANCELED:
-                post_notification("Goal canceled", status=NotificationStatus.WARNING)
-                self._navigator.get_logger().info("Goal canceled")
-            elif result == TaskResult.FAILED:
-                post_notification("Goal failed!", status=NotificationStatus.WARNING)
-                self._navigator.get_logger().info("Goal canceled")
+            with self._navigator_lock:
+                if self._navigator is None:
+                    return
+                if result == TaskResult.SUCCEEDED:
+                    post_notification("Goal succeeded", status=NotificationStatus.INFO)
+                    self._navigator.get_logger().info("Goal succeeded")
+                elif result == TaskResult.CANCELED:
+                    post_notification("Goal canceled", status=NotificationStatus.WARNING)
+                    self._navigator.get_logger().info("Goal canceled")
+                elif result == TaskResult.FAILED:
+                    post_notification("Goal failed!", status=NotificationStatus.WARNING)
+                    self._navigator.get_logger().info("Goal canceled")
         except Exception:
             pass
 
@@ -155,20 +188,21 @@ class WaypointFollower(BaseResetNode):
     # This will also be called when the OmniGraph node is released.
     def custom_reset(self):
         try:
-            if self._navigator:
-                self._navigator.destroy_node()
-                # Remove try-except block once below fix is reflected in debian file
-                # nav2_simple_commander/nav2_simple_commander/robot_navigator.py
-                # https://github.com/ros-navigation/navigation2/issues/4696
-                try:
-                    self._navigator.assisted_teleop_client.destroy()
-                except Exception as ex:
-                    print("Error while destroying Assisted Teleop",ex)
-                self._navigator = None
+            with self._navigator_lock:
+                if self._navigator:
+                    self._navigator.destroy_node()
+                    # Remove try-except block once below fix is reflected in debian file
+                    # nav2_simple_commander/nav2_simple_commander/robot_navigator.py
+                    # https://github.com/ros-navigation/navigation2/issues/4696
+                    try:
+                        self._navigator.assisted_teleop_client.destroy()
+                    except Exception as ex:
+                        print("Error while destroying Assisted Teleop",ex)
+                    self._navigator = None
 
-                self.initialized = False
+                    self.initialized = False
 
-                rclpy.try_shutdown()
+                    rclpy.try_shutdown()
 
             global waypoint_follower
             waypoint_follower = None
@@ -235,6 +269,11 @@ class Patrolling(BaseResetNode):
         self._navigator = None
         self._counter = 1
         self._db = db
+        # custom_reset() runs on the main thread (simulation stop / node release)
+        # while start_patrolling() runs on a background thread; without this
+        # lock, custom_reset() can destroy_node()/null out self._navigator while
+        # the background thread is mid-call on the same navigator object.
+        self._navigator_lock = threading.Lock()
         super().__init__(initialize=False)
 
     def initialize_ros2_node(self):
@@ -243,7 +282,12 @@ class Patrolling(BaseResetNode):
             # node in this process started it); guard so the navigator is still created.
             if not rclpy.ok():
                 rclpy.init()
-            self._navigator = BasicNavigator()
+            # namespace is "" for a single-robot graph (matching BasicNavigator's
+            # own default) or a graph-path-derived namespace for a multi-robot
+            # instance (see _create_ros_action_graph), so each robot's navigator
+            # gets its own ROS 2 node name and action/topic namespace instead of
+            # colliding with every other robot's.
+            self._navigator = BasicNavigator(namespace=self._db.inputs.namespace)
             # Only mark initialized once the navigator actually exists; otherwise later
             # code dereferences self._navigator (None) and raises AttributeError.
             self.initialized = True
@@ -267,10 +311,13 @@ class Patrolling(BaseResetNode):
 
     def start_patrolling(self):
         try:
-            # Avoid setting bogus initial pose
-            self._navigator.initial_pose_received = True
-            # Wait until the full navigation system is up and running
-            self._navigator.waitUntilNav2Active()
+            with self._navigator_lock:
+                if self._navigator is None:
+                    return
+                # Avoid setting bogus initial pose
+                self._navigator.initial_pose_received = True
+                # Wait until the full navigation system is up and running
+                self._navigator.waitUntilNav2Active()
         except Exception as e:
             post_notification("Patrolling Stopped!", status=NotificationStatus.WARNING)
             return
@@ -296,30 +343,50 @@ class Patrolling(BaseResetNode):
 
         while rclpy.ok():
             try:
-                # Call FollowWaypoints action server with list of waypoints
-                self._navigator.followWaypoints(waypoints)
+                with self._navigator_lock:
+                    if self._navigator is None:
+                        return
+                    # Call FollowWaypoints action server with list of waypoints
+                    self._navigator.followWaypoints(waypoints)
                 time_diff = 10
                 past_time = time.time()
 
-                # Check if task is completed or not
-                while not self._navigator.isTaskComplete():
-                    feedback = self._navigator.getFeedback()
+                # Check if task is completed or not. custom_reset() (main thread)
+                # can destroy_node()/null out self._navigator between iterations,
+                # so every navigator access here is re-acquired under the lock and
+                # re-checked for None instead of holding the lock across the whole
+                # poll loop (which would block a real Stop-simulation reset for
+                # the loop's entire duration).
+                while True:
+                    with self._navigator_lock:
+                        if self._navigator is None:
+                            return
+                        task_complete = self._navigator.isTaskComplete()
+                        feedback = None if task_complete else self._navigator.getFeedback()
+                    if task_complete:
+                        break
                     if time.time() - past_time > time_diff:
                         post_notification(f'{feedback}', status=NotificationStatus.INFO)
                         past_time = time.time()
-                result = self._navigator.getResult()
+                with self._navigator_lock:
+                    if self._navigator is None:
+                        return
+                    result = self._navigator.getResult()
             except Exception as e:
                 post_notification("Patrolling Stopped!", status=NotificationStatus.WARNING)
                 return
             try:
-                if result == TaskResult.SUCCEEDED:
-                    post_notification(f'Round {self._counter} is completed', status=NotificationStatus.INFO)
-                    self._navigator.get_logger().info(f'Round {self._counter} is completed')
-                    self._counter = self._counter + 1
-                else:
-                    post_notification(f'Round {self._counter} is either Failed or Cancelled!', status=NotificationStatus.WARNING)
-                    self._navigator.get_logger().info(f'Round {self._counter} is completed')
-                    break
+                with self._navigator_lock:
+                    if self._navigator is None:
+                        return
+                    if result == TaskResult.SUCCEEDED:
+                        post_notification(f'Round {self._counter} is completed', status=NotificationStatus.INFO)
+                        self._navigator.get_logger().info(f'Round {self._counter} is completed')
+                        self._counter = self._counter + 1
+                    else:
+                        post_notification(f'Round {self._counter} is either Failed or Cancelled!', status=NotificationStatus.WARNING)
+                        self._navigator.get_logger().info(f'Round {self._counter} is completed')
+                        break
             except Exception:
                 pass
 
@@ -328,20 +395,21 @@ class Patrolling(BaseResetNode):
     # This will also be called when the OmniGraph node is released.
     def custom_reset(self):
         try:
-            if self._navigator:
-                self._navigator.destroy_node()
-                # Remove try-except block once below fix is reflected in debian file
-                # nav2_simple_commander/nav2_simple_commander/robot_navigator.py
-                # https://github.com/ros-navigation/navigation2/issues/4696
-                try:
-                    self._navigator.assisted_teleop_client.destroy()
-                except Exception as ex:
-                    print("Error while destroying Assisted Teleop",ex)
-                self._navigator = None
+            with self._navigator_lock:
+                if self._navigator:
+                    self._navigator.destroy_node()
+                    # Remove try-except block once below fix is reflected in debian file
+                    # nav2_simple_commander/nav2_simple_commander/robot_navigator.py
+                    # https://github.com/ros-navigation/navigation2/issues/4696
+                    try:
+                        self._navigator.assisted_teleop_client.destroy()
+                    except Exception as ex:
+                        print("Error while destroying Assisted Teleop",ex)
+                    self._navigator = None
 
-                self.initialized = False
+                    self.initialized = False
 
-                rclpy.try_shutdown()
+                    rclpy.try_shutdown()
         except Exception as e:
             post_notification("Node is reset!", status=NotificationStatus.WARNING)
 
@@ -516,6 +584,16 @@ class Extension(omni.ext.IExt):
 
         if self._enable_multi_robot:
             self._og_path = stage_utils.generate_next_free_path(self._og_path, prepend_default_prim=False)
+        # Each multi-robot instance gets its own OG graph (via the unique path
+        # above), but BasicNavigator() defaults to the same "basic_navigator"
+        # node name and empty namespace regardless of which graph created it:
+        # without a distinct namespace, every robot's navigator registers the
+        # same ROS 2 node name and talks to the same un-namespaced Nav2
+        # action/topic names instead of its own robot's stack. Derive a
+        # namespace from the graph's own unique path suffix so multi-robot
+        # instances don't collide; empty string (default BasicNavigator
+        # behavior) when multi-robot is off.
+        namespace = "/" + self._og_path.rsplit("/", 1)[-1] if self._enable_multi_robot else ""
         try:
             og.Controller.edit(
                 {"graph_path": self._og_path, "evaluator_name": "execution"},
@@ -532,6 +610,7 @@ class Extension(omni.ext.IExt):
                         ("Branch", "omni.graph.action.Branch"),
                         ("ResetBranch", "omni.graph.action.Branch"),
                         ("FrameIdConstant", "omni.graph.nodes.ConstantToken"),
+                        ("NamespaceConstant", "omni.graph.nodes.ConstantToken"),
                         ("WaypointPrimPath", "omni.graph.nodes.ConstantString"),
                         ("WaypointCountConstant", "omni.graph.nodes.ConstantInt"),
                         ("ReadPrimLocalTransform", "omni.graph.nodes.ReadPrimLocalTransform"),
@@ -545,6 +624,7 @@ class Extension(omni.ext.IExt):
                     keys.SET_VALUES: [
                         ("WaypointPrimPath.inputs:value", self._goal_parent_prim + "/"),
                         ("FrameIdConstant.inputs:value", self._frame_id),
+                        ("NamespaceConstant.inputs:value", namespace),
                         ("WaypointCountConstant.inputs:value", self._number_of_waypoints),
                         ("GetPrims.inputs:cachePrims", False),
                         ("GetPrims.inputs:ignoreCase", False),
@@ -586,14 +666,18 @@ class Extension(omni.ext.IExt):
                         ("GatherWaypointsScriptNode.outputs:waypoints", "PatrollingScriptNode.inputs:waypoints"),
                         ("FrameIdConstant.inputs:value", "WaypointScriptNode.inputs:frame_id"),
                         ("FrameIdConstant.inputs:value", "PatrollingScriptNode.inputs:frame_id"),
+                        ("NamespaceConstant.inputs:value", "WaypointScriptNode.inputs:namespace"),
+                        ("NamespaceConstant.inputs:value", "PatrollingScriptNode.inputs:namespace"),
                         ("WaypointPrimPath.inputs:value", "GetPrims.inputs:pathMatch"),
                     ],
                     keys.CREATE_ATTRIBUTES: [
                         (self._og_path + "/WaypointScriptNode.inputs:waypoints", "token[]"),
                         (self._og_path + "/WaypointScriptNode.inputs:frame_id", "token"),
+                        (self._og_path + "/WaypointScriptNode.inputs:namespace", "token"),
                         (self._og_path + "/WaypointScriptNode.inputs:reset_state", "execution"),
                         (self._og_path + "/PatrollingScriptNode.inputs:waypoints", "token[]"),
                         (self._og_path + "/PatrollingScriptNode.inputs:frame_id", "token"),
+                        (self._og_path + "/PatrollingScriptNode.inputs:namespace", "token"),
                         (self._og_path + "/PatrollingScriptNode.state:initialized", "bool"),
                         (self._og_path + "/PatrollingScriptNode.inputs:reset_state", "execution"),
                         (self._og_path + "/GatherWaypointsScriptNode.inputs:translation", "any"),

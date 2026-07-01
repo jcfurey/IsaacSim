@@ -69,9 +69,18 @@ RUN echo 'alias runapp=/isaac-sim/runapp.sh' >> ~/.bashrc && \
     echo 'alias runheadless=/isaac-sim/runheadless.sh' >> ~/.bashrc && \
     echo '[ -f /isaac-sim/setup_ros_env.sh ] && . /isaac-sim/setup_ros_env.sh' >> ~/.bashrc
 
-# Health check: consider ready when AppReady appears in the Isaac Sim log (Kit/<app>/<version>/kit_*.log)
+# Health check: consider ready when AppReady appears in the Isaac Sim log (Kit/<app>/<version>/kit_*.log).
+# .nvidia-omniverse/logs persists across restarts (e.g. a mounted volume, or
+# `docker restart` on the same container), so an old log file from a previous
+# run can still contain "AppReady" even though the current process hasn't
+# logged it yet. Only consider log files modified after /tmp/.container_started
+# (touched fresh by the entrypoint below on every container start) so a stale
+# log can't make the healthcheck report "healthy" before the new instance is.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
-  CMD bash -c 'logdir="/isaac-sim/.nvidia-omniverse/logs/Kit"; [ -d "$logdir" ] && latest=$(ls -t "$logdir"/*/*/kit_*.log 2>/dev/null | head -1) && [ -n "$latest" ] && grep -q "AppReady" "$latest" && exit 0; exit 1'
+  CMD bash -c 'logdir="/isaac-sim/.nvidia-omniverse/logs/Kit"; marker="/tmp/.container_started"; [ -d "$logdir" ] && [ -f "$marker" ] && latest=$(find "$logdir" -name "kit_*.log" -newer "$marker" 2>/dev/null | xargs -r ls -t | head -1) && [ -n "$latest" ] && grep -q "AppReady" "$latest" && exit 0; exit 1'
 
-# Default entrypoint to launch headless with streaming
-ENTRYPOINT ["/isaac-sim/runheadless.sh"]
+# Default entrypoint to launch headless with streaming. Touching the marker
+# here (rather than in runheadless.sh, which is generated/packaged outside
+# this source tree) gives every container start a fresh timestamp for the
+# healthcheck's staleness check above.
+ENTRYPOINT ["/bin/bash", "-c", "touch /tmp/.container_started && exec /isaac-sim/runheadless.sh \"$@\"", "--"]
