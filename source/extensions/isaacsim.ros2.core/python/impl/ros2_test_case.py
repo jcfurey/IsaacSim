@@ -191,6 +191,17 @@ class ROS2TestCase(TimedAsyncTestCase):
         self._ros2_callback_groups.pop(node, None)
         executor.shutdown()
         thread.join(timeout=5.0)
+        if thread.is_alive():
+            # Thread.join() with a timeout returns silently whether or not the thread
+            # actually finished. A still-alive spin thread means a callback is stuck, and
+            # the caller is about to destroy the node's publishers/subscriptions/node while
+            # that thread may still be executing callbacks against them -- a use-after-free
+            # race in the underlying rcl/rclpy bindings. Surface it loudly instead of
+            # silently racing.
+            carb.log_warn(
+                f"node {node.get_name()} executor thread did not stop within 5s; "
+                "destroying node resources now anyway, a crash or hang may follow"
+            )
 
     async def simulate_until_condition(
         self,
@@ -329,6 +340,16 @@ class ROS2TestCase(TimedAsyncTestCase):
             try:
                 executor.shutdown()
                 thread.join(timeout=5.0)
+                if thread.is_alive():
+                    # join() with a timeout returns silently regardless of whether the
+                    # thread actually stopped. If it's still alive, a callback is stuck
+                    # spinning and the code below is about to destroy this node's
+                    # publishers/subscriptions/node while that thread may still be running
+                    # callbacks against them -- a use-after-free race. Surface it loudly.
+                    carb.log_warn(
+                        f"node {node.get_name()} executor thread did not stop within 5s; "
+                        "destroying node resources now anyway, a crash or hang may follow"
+                    )
             except Exception as e:
                 carb.log_warn(f"Failed to stop executor: {e}")
         self._ros2_executors.clear()

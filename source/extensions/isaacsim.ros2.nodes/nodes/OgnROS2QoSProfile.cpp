@@ -23,11 +23,25 @@
 
 namespace
 {
-constexpr int g_kNumPolicyInputs = 8;
-
-// Per-node semaphore keyed by prim path, prevents cascading callbacks
+// Per-node re-entrancy guard keyed by prim path, prevents cascading callbacks
 // when applying a preset that modifies all individual QoS policy inputs.
-std::unordered_map<std::string, int> g_sPresetSemaphores;
+//
+// This was previously a counter pre-loaded with the number of policy inputs
+// (8) that a preset writes, decremented once per _onQoSPolicyChanged
+// invocation. That scheme silently desynced whenever a preset happened to
+// write a value identical to the attribute's current value: OmniGraph's
+// value-changed callback is only invoked when the value actually changes, so
+// a write that is a no-op (e.g. applying "Default for publishers/subscribers"
+// on a freshly created node, whose .ogn defaults already match every field
+// the preset writes) never fires the callback and the counter is never
+// decremented for that field. The counter is then left stuck above zero,
+// and the next N genuine user edits to the QoS policy inputs are
+// misattributed to "still applying the preset" and silently swallowed
+// (createProfile incorrectly stays on the preset name instead of flipping to
+// "Custom"). A simple boolean guard for "a preset application is currently
+// in flight" is correct regardless of how many of the writes the underlying
+// callback actually fires for.
+std::unordered_map<std::string, bool> g_sApplyingPreset;
 } // namespace
 
 class OgnROS2QoSProfile : public isaacsim::core::includes::BaseResetNode
@@ -39,7 +53,7 @@ public:
         state.m_nodeObj = nodeObj;
 
         std::string primPath = nodeObj.iNode->getPrimPath(nodeObj);
-        g_sPresetSemaphores[primPath] = 0;
+        g_sApplyingPreset[primPath] = false;
 
         AttributeObj createProfileAttr = nodeObj.iNode->getAttribute(nodeObj, "inputs:createProfile");
         createProfileAttr.iAttribute->registerValueChangedCallback(createProfileAttr, _onCreateProfileChanged, true);
@@ -81,7 +95,7 @@ public:
     {
         auto& state = OgnROS2QoSProfileDatabase::sPerInstanceState<OgnROS2QoSProfile>(nodeObj, instanceId);
         std::string primPath = nodeObj.iNode->getPrimPath(nodeObj);
-        g_sPresetSemaphores.erase(primPath);
+        g_sApplyingPreset.erase(primPath);
         state.reset();
     }
 
@@ -167,7 +181,7 @@ private:
         }
 
         std::string primPath = nodeObj.iNode->getPrimPath(nodeObj);
-        g_sPresetSemaphores[primPath] = g_kNumPolicyInputs;
+        g_sApplyingPreset[primPath] = true;
 
         if (profileValue == "Default for publishers/subscribers" || profileValue == "Services")
         {
@@ -191,6 +205,14 @@ private:
             _setTokenAttr(nodeObj, context, "inputs:liveliness", "systemDefault");
             _setTimeDefaults(nodeObj, context);
         }
+
+        // Done issuing the writes for this preset: any of the value-changed
+        // callbacks that were going to fire synchronously as a result of the
+        // writes above have already done so by this point, so it is safe to
+        // drop the guard. Fields whose new value equalled their previous
+        // value never invoke the callback at all, which is exactly why a
+        // "count down from N" scheme is not robust here.
+        g_sApplyingPreset[primPath] = false;
     }
 
     static void _onCreateProfileChanged(AttributeObj const& attrObj, void const* userData)
@@ -204,10 +226,11 @@ private:
         NodeObj nodeObj = attrObj.iAttribute->getNode(attrObj);
         std::string primPath = nodeObj.iNode->getPrimPath(nodeObj);
 
-        auto it = g_sPresetSemaphores.find(primPath);
-        if (it != g_sPresetSemaphores.end() && it->second > 0)
+        auto it = g_sApplyingPreset.find(primPath);
+        if (it != g_sApplyingPreset.end() && it->second)
         {
-            it->second--;
+            // This edit was caused by _applyPreset() itself; ignore it rather
+            // than misreporting the node as "Custom".
             return;
         }
 

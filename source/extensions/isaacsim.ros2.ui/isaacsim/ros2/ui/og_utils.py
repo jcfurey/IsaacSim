@@ -617,39 +617,50 @@ class Ros2JointStatesGraph(MenuHelperWindow):
                 )
 
             if self._sub_move_robot:
-                og.Controller.edit(
-                    graph_handle,
-                    {
-                        keys.CREATE_NODES: [
-                            (art_node_name, "isaacsim.core.nodes.IsaacArticulationController"),
-                        ],
-                        keys.SET_VALUES: [
-                            (art_node_name + ".inputs:targetPrim", self._art_root_path),
-                        ],
-                        keys.CONNECT: [
-                            (
-                                tick_node + ".outputs:tick",
-                                self._og_path + "/" + art_node_name + ".inputs:execIn",
-                            ),
-                            (
-                                self._og_path + "/" + js_sub_node_name + ".outputs:positionCommand",
-                                self._og_path + "/" + art_node_name + ".inputs:positionCommand",
-                            ),
-                            (
-                                self._og_path + "/" + js_sub_node_name + ".outputs:velocityCommand",
-                                self._og_path + "/" + art_node_name + ".inputs:velocityCommand",
-                            ),
-                            (
-                                self._og_path + "/" + js_sub_node_name + ".outputs:effortCommand",
-                                self._og_path + "/" + art_node_name + ".inputs:effortCommand",
-                            ),
-                            (
-                                self._og_path + "/" + js_sub_node_name + ".outputs:jointNames",
-                                self._og_path + "/" + art_node_name + ".inputs:jointNames",
-                            ),
-                        ],
-                    },
-                )
+                # tick_node is None when adding to an existing graph that lacks an
+                # OnPlaybackTick/OnTick node; `None + ".outputs:tick"` would raise
+                # TypeError (the same class of bug fixed for Ros2TfPubGraph below --
+                # keep this sibling consistent with that fix).
+                if not tick_node:
+                    post_notification(
+                        f"Graph {self._og_path} is missing the tick node needed to drive the articulation "
+                        "controller. Use the tool to build a new graph instead.",
+                        status=NotificationStatus.WARNING,
+                    )
+                else:
+                    og.Controller.edit(
+                        graph_handle,
+                        {
+                            keys.CREATE_NODES: [
+                                (art_node_name, "isaacsim.core.nodes.IsaacArticulationController"),
+                            ],
+                            keys.SET_VALUES: [
+                                (art_node_name + ".inputs:targetPrim", self._art_root_path),
+                            ],
+                            keys.CONNECT: [
+                                (
+                                    tick_node + ".outputs:tick",
+                                    self._og_path + "/" + art_node_name + ".inputs:execIn",
+                                ),
+                                (
+                                    self._og_path + "/" + js_sub_node_name + ".outputs:positionCommand",
+                                    self._og_path + "/" + art_node_name + ".inputs:positionCommand",
+                                ),
+                                (
+                                    self._og_path + "/" + js_sub_node_name + ".outputs:velocityCommand",
+                                    self._og_path + "/" + art_node_name + ".inputs:velocityCommand",
+                                ),
+                                (
+                                    self._og_path + "/" + js_sub_node_name + ".outputs:effortCommand",
+                                    self._og_path + "/" + art_node_name + ".inputs:effortCommand",
+                                ),
+                                (
+                                    self._og_path + "/" + js_sub_node_name + ".outputs:jointNames",
+                                    self._og_path + "/" + art_node_name + ".inputs:jointNames",
+                                ),
+                            ],
+                        },
+                    )
 
     def _build_ui(self) -> None:
         """Construct the user interface for the ROS2 Joint States Graph window.
@@ -1213,6 +1224,19 @@ class Ros2OdometryGraph(MenuHelperWindow):
             elif node_type == "isaacsim.ros2.bridge.ROS2PublishTransformTree":
                 tf_robot_node = stage_utils.generate_next_free_path(node_path, prepend_default_prim=False)
                 tf_robot_name = Path(tf_robot_node).name
+
+        # tick_node is None when adding to an existing graph that lacks an
+        # OnPlaybackTick/OnTick node. It is used unconditionally in the CONNECT
+        # block below, so `None + ".outputs:tick"` would raise TypeError (the same
+        # class of bug fixed for Ros2TfPubGraph.make_graph -- keep this sibling
+        # consistent with that fix).
+        if not tick_node:
+            post_notification(
+                f"Graph {self._og_path} is missing the tick node needed to build the odometry graph. "
+                "Use the tool to build a new graph instead.",
+                status=NotificationStatus.WARNING,
+            )
+            return
 
         # add odometry related nodes and connections:
         og.Controller.edit(

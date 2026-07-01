@@ -75,6 +75,14 @@ class ROS2CoreExtension(omni.ext.IExt):
             os.environ["ROS_DISTRO"] = ros_distro
             # Signal to C++ plugin that internal lib fallback is allowed (no user-sourced ROS)
             carb.settings.get_settings().set_bool("/exts/isaacsim.ros2.bridge/internal_lib_fallback", True)
+        else:
+            # User (or a previous on_startup call in this process) has ROS_DISTRO set: the
+            # user is expected to have sourced their own ROS 2 install. Explicitly clear the
+            # flag so a stale True from an earlier extension enable/disable cycle in the same
+            # Kit process can't leak forward and make check_status()/PluginInterface.cpp
+            # silently fall back to internal libs (or skip the "hard fail" path) instead of
+            # honoring the user's sourced environment.
+            carb.settings.get_settings().set_bool("/exts/isaacsim.ros2.bridge/internal_lib_fallback", False)
 
         if ros_distro not in SUPPORTED_ROS_DISTROS.values():
             omni.kit.app.get_app().print_and_log(

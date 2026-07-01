@@ -146,7 +146,18 @@ public:
         auto& linearVelocity = db.inputs.linearVelocity();
         auto& angularVelocity = db.inputs.angularVelocity();
         auto& position = db.inputs.position();
-        auto& orientation = db.inputs.orientation();
+
+        // `orientation` is a raw OGN graph input (quatd[4]): it may come from a user-authored
+        // constant, a non-normalizing upstream node, or accumulated arithmetic, so unlike a
+        // pxr::GfQuatd freshly extracted via ExtractRotationQuat, unit length is not guaranteed.
+        // Normalize a local copy (never mutate the graph's stored attribute value in place) before
+        // it reaches the outgoing message. Degenerate/near-zero input falls back to identity rather
+        // than publishing NaNs.
+        pxr::GfQuatd orientation = db.inputs.orientation();
+        if (orientation.Normalize(1e-6) == 0.0)
+        {
+            orientation = pxr::GfQuatd::GetIdentity();
+        }
 
         bool publishRawVelocities = db.inputs.publishRawVelocities();
 

@@ -63,6 +63,18 @@ class TFListener:
         # Initialized here so finalize() can run safely even if initialize() was never
         # called or failed before creating the executor (otherwise AttributeError).
         self._executor = None
+        # Handle to the spin thread so finalize() can join it (see finalize()).
+        self._executor_thread = None
+        # rclpy.init()/shutdown() operate on a process-wide default Context singleton
+        # (rclpy.utilities.get_default_context()) unless an explicit context= is
+        # passed. Other in-process ROS2 users -- e.g. isaacsim.ros2.urdf's
+        # RobotDefinitionReader, isaacsim.ros2.sim_control, or a user's own rclpy
+        # usage -- may already have it initialized, or may initialize it after us.
+        # Track whether *this* instance is the one that actually initialized rclpy
+        # so finalize() only shuts it down when it owns that lifecycle; otherwise
+        # tearing down the TF listener would shut down rclpy out from under an
+        # unrelated, still-active rclpy user in the same process.
+        self._owns_rclpy_init = False
 
     def initialize(self, distro: str) -> bool:
         """Initializes the ROS2 TF listener node and starts the executor thread.
@@ -76,7 +88,15 @@ class TFListener:
         import rclpy
         import tf2_ros
 
-        rclpy.init()
+        # rclpy.init() raises RuntimeError if the default context is already
+        # initialized by someone else in this process. Guard it the same way the
+        # other ROS2-using extensions in this codebase do (sim_control,
+        # robot_definition_reader), and remember whether we were the initializer.
+        self._owns_rclpy_init = not rclpy.ok()
+        try:
+            rclpy.init()
+        except RuntimeError:
+            self._owns_rclpy_init = False
         self._node = rclpy.node.Node(self._node_name)
 
         # tf2 implementation
@@ -88,7 +108,10 @@ class TFListener:
 
         self._executor = rclpy.executors.MultiThreadedExecutor()
         self._executor.add_node(self._node)
-        threading.Thread(target=self._executor.spin).start()
+        self._executor_thread = threading.Thread(
+            target=self._executor.spin, name="isaacsim.ros2.tf_viewer.spin", daemon=True
+        )
+        self._executor_thread.start()
         return True
 
     def finalize(self) -> None:
@@ -99,16 +122,31 @@ class TFListener:
             self._listener.unregister()
             self._listener = None
         if self._executor:
+            # shutdown() only flags spin() to stop at its next wait-set wakeup; it
+            # does not block until the spin thread has actually returned.
             self._executor.shutdown()
             self._executor = None
+        if self._executor_thread:
+            # Join before destroying the node: otherwise the spin thread can still
+            # be inside a wait-set/callback using self._node when destroy_node()
+            # (or a subsequent rclpy.shutdown()) runs, a use-after-free race on the
+            # rcl node handle.
+            self._executor_thread.join(timeout=5.0)
+            if self._executor_thread.is_alive():
+                carb.log_warn("TF listener executor thread did not stop within timeout")
+            self._executor_thread = None
         if self._node:
             self._node.destroy_node()
             self._node = None
 
-        try:
-            rclpy.shutdown()
-        except RuntimeError as e:
-            carb.log_info(f"rclpy.shutdown: {e}")
+        # Only shut down the process-wide default context if we were the one who
+        # initialized it -- see the comment on self._owns_rclpy_init above.
+        if self._owns_rclpy_init:
+            try:
+                rclpy.shutdown()
+            except RuntimeError as e:
+                carb.log_info(f"rclpy.shutdown: {e}")
+            self._owns_rclpy_init = False
 
     def get_transforms(self, root_frame: str) -> tuple[set, dict, list]:
         """Retrieves all available transforms relative to the root frame.

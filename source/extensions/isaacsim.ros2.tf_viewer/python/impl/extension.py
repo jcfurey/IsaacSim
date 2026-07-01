@@ -80,6 +80,11 @@ class Extension(omni.ext.IExt):
         )
 
         self._interface = None
+        # Module that created self._interface (see _on_visibility_changed); tracked
+        # separately from self._module[self._ros_version] because the latter is
+        # recomputed from live extension-manager state and can change between the
+        # acquire and release calls.
+        self._interface_module = None
         self._ros_version = ""
         # Update is driven by the kit app update event (main thread) instead of a worker
         # thread so viewport/USD writes happen on the thread that owns them. Cancelling
@@ -96,6 +101,16 @@ class Extension(omni.ext.IExt):
         # Cancel the update subscription first so no further callbacks run against
         # half-destroyed state.
         self._update_sub = None
+        # If the window was visible (interface acquired, executor thread spinning)
+        # when the extension is disabled/reloaded, release it here too. Without
+        # this, on_shutdown() previously left the TF listener's executor thread and
+        # rclpy context running after the extension itself was torn down.
+        if self._interface:
+            self._interface.finalize()
+            if self._interface_module:
+                self._interface_module.release_transform_listener_interface(self._interface)
+                self._interface_module = None
+            self._interface = None
         self._ui_builder.shutdown()
         # destroy viewport scene
         if self._viewport_scene:
@@ -119,6 +134,11 @@ class Extension(omni.ext.IExt):
             if module:
                 self._interface = module.acquire_transform_listener_interface()
                 self._interface.initialize(distro)
+                # Remember which module created the interface so release always uses
+                # the matching module, even if the live bridge-extension-enabled
+                # state (and therefore `module`, recomputed at the top of this
+                # method) changes before visibility is toggled off again.
+                self._interface_module = module
             # Drop any prior subscription before creating a new one (e.g. visibility
             # toggled on twice without an intervening off).
             self._update_sub = None
@@ -135,10 +155,19 @@ class Extension(omni.ext.IExt):
             # Cancel callbacks before releasing the interface so _on_update cannot
             # observe a half-released listener.
             self._update_sub = None
-            # release interface
-            if module:
+            # Release interface. Guard on self._interface (not the locally recomputed
+            # `module`): module is re-derived from the *current* bridge-extension-
+            # enabled state, which can differ from what it was when visibility was
+            # turned on (e.g. the bridge extension was disabled, then re-enabled, in
+            # between). If the interface was never acquired (module was falsy on the
+            # acquire path), self._interface is still None here and calling
+            # finalize() on it would raise AttributeError. Release through
+            # self._interface_module (the module that actually created it) rather
+            # than `module`, which could itself be None or a mismatched module here.
+            if self._interface:
                 self._interface.finalize()
-                module.release_transform_listener_interface(self._interface)
+                self._interface_module.release_transform_listener_interface(self._interface)
+                self._interface_module = None
             self._interface = None
             # clear scene
             if self._viewport_scene:
