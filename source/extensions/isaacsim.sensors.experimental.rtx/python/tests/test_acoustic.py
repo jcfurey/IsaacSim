@@ -77,6 +77,26 @@ class TestAcoustic(omni.kit.test.AsyncTestCase):
         acoustic = Acoustic("/World/acoustic", attributes={"nonexistent:attr": 42})
         self.assertEqual(acoustic.prims[0].GetTypeName(), "OmniAcoustic")
 
+    async def test_wrap_with_sensor_mount_attributes(self) -> None:
+        """Apply a new acoustic sensor-mount API instance while wrapping an existing prim.
+
+        Multi-apply schema inference must run for the wrap path too, not just
+        for newly created prims: an existing acoustic prim only carries the
+        default ``m001``/``g001``/``seq001`` instances, so adding a third
+        mount via attributes still needs its own API instance applied.
+        """
+        prim = stage_utils.define_prim("/World/acoustic", "OmniAcoustic")
+        prim.ApplyAPI("OmniSensorGenericAcousticWpmAPI")
+        acoustic = Acoustic(
+            "/World/acoustic",
+            attributes={"omni:sensor:WpmAcoustic:sensorMount:m003:position": (1.0, 0.0, 0.0)},
+        )
+        prim = acoustic.prims[0]
+        self.assertTrue(prim.HasAPI("OmniSensorWpmAcousticSensorMountAPI", instanceName="m003"))
+        self.assertAlmostEqual(
+            prim.GetAttribute("omni:sensor:WpmAcoustic:sensorMount:m003:position").Get()[0], 1.0
+        )
+
     # -- create --
 
     async def test_create_new_prim(self) -> None:
@@ -148,6 +168,21 @@ class TestAcoustic(omni.kit.test.AsyncTestCase):
         prim = acoustic.prims[0]
         self.assertTrue(prim.HasAPI("OmniSensorWpmAcousticSensorMountAPI", instanceName="m001"))
         self.assertTrue(prim.HasAPI("OmniSensorWpmAcousticSensorMountAPI", instanceName="m002"))
+
+    async def test_create_with_firing_sequence_attributes(self) -> None:
+        """Apply the acoustic firing-sequence API when firingSeq attributes are provided.
+
+        OmniSensorGenericAcousticWpmAPI declares sensorMount, rxGroup, and
+        firingSeq as multi-apply instances (m001/g001/seq001 by default); a
+        second firing sequence beyond the default must get its own API
+        instance applied, just like a second sensor mount or receiver group.
+        """
+        acoustic = Acoustic(
+            "/World/acoustic",
+            attributes={"omni:sensor:WpmAcoustic:firingSeq:seq002:channel": [1]},
+        )
+        prim = acoustic.prims[0]
+        self.assertTrue(prim.HasAPI("OmniSensorWpmAcousticFiringSeqAPI", instanceName="seq002"))
 
     # -- errors --
 

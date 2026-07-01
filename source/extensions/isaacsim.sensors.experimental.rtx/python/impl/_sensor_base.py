@@ -203,6 +203,8 @@ class _SensorAuthoring(XformPrim):
                     self._apply_schemas(path, schemas)
             if attributes is not None:
                 for path in existent_paths:
+                    self._infer_multi_apply_schemas(path, attributes)
+                for path in existent_paths:
                     self._apply_attributes(path, attributes)
         # create new prims
         else:
@@ -214,8 +216,13 @@ class _SensorAuthoring(XformPrim):
             if schemas is not None:
                 for p in paths:
                     self._apply_schemas(p, schemas)
-            # apply attributes after all schemas are present
+            # apply attributes after all schemas are present. Multi-apply schema
+            # inference runs here (not inside _create_prim) so it applies
+            # identically whether the prim was just created or wrapped above --
+            # see _infer_multi_apply_schemas.
             if attributes is not None:
+                for p in paths:
+                    self._infer_multi_apply_schemas(p, attributes)
                 for p in paths:
                     self._apply_attributes(p, attributes)
         # resolve tick rate: attributes dict takes precedence over tick_rate parameter.
@@ -262,6 +269,24 @@ class _SensorAuthoring(XformPrim):
             Actual prim path after creation.
         """
         raise NotImplementedError
+
+    @classmethod
+    def _infer_multi_apply_schemas(cls, path: str, attributes: dict[str, Any] | None) -> None:
+        """Infer and apply multi-instance API schemas from attribute key prefixes.
+
+        Called from :meth:`__init__` for both newly created and wrapped
+        existing prims (in that order, before :meth:`_apply_attributes`), so
+        subclasses that override this get identical behavior regardless of
+        whether the prim was just created or already existed. Default
+        implementation is a no-op; override in subclasses that support
+        attribute-driven multi-apply schema inference (e.g. :class:`Acoustic`'s
+        sensor mount / receiver group / firing sequence schemas).
+
+        Args:
+            path: USD prim path.
+            attributes: Mapping of attribute names to values to infer schemas from.
+        """
+        return
 
     @staticmethod
     def _apply_schemas(path: str, schemas: list[str]) -> None:
@@ -460,18 +485,27 @@ class _SensorRuntime:
         """
         annotators = [annotators] if isinstance(annotators, str) else annotators
         self._validate_annotators(annotators)
+        attached = {}
+        # Create and attach each annotator in one step, only recording it in
+        # self._annotators once .attach() actually succeeds (mirroring
+        # attach_writer's create-then-attach-then-record pattern below):
+        # previously every annotator was created and stored in
+        # self._annotators up front, then attached in a second loop, so a
+        # .attach() failure partway through left self._annotators (and thus
+        # the public `annotators` property / get_data()'s membership check)
+        # reporting annotators that were constructed but never actually bound
+        # to the render product.
         for annotator in annotators:
             spec = self._get_annotator_spec(annotator)
             device = "cuda"
             if annotator in ["stable-id-map", "generic-model-output"]:
                 device = "cpu"
-            self._annotators[annotator] = rep.AnnotatorRegistry.get_annotator(
-                spec["name"], device=device, do_array_copy=False
-            )
-        for annotator in annotators:
-            self._annotators[annotator].attach(self._hydra_texture.path)
+            instance = rep.AnnotatorRegistry.get_annotator(spec["name"], device=device, do_array_copy=False)
+            instance.attach(self._hydra_texture.path)
+            self._annotators[annotator] = instance
+            attached[annotator] = instance
 
-        return {annotator: self._annotators[annotator] for annotator in annotators}
+        return attached
 
     def detach_annotators(self, annotators: str | list[str]) -> None:
         """Detach annotators from the sensor.

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import isaacsim.core.experimental.utils.prim as prim_utils
 import isaacsim.core.experimental.utils.stage as stage_utils
 import numpy as np
 import warp as wp
@@ -77,46 +78,73 @@ class Acoustic(_SensorAuthoring):
     _SCHEMA = "OmniSensorGenericAcousticWpmAPI"
     _VALID_AUX_OUTPUT_LEVELS = ("NONE", "BASIC")
 
-    # Mapping from attribute prefix to multi-apply API schema name.
+    # Mapping from attribute prefix to multi-apply API schema name. Mirrors the
+    # three multi-apply instances OmniSensorGenericAcousticWpmAPI itself
+    # declares by default (sensorMount:m001, rxGroup:g001, firingSeq:seq001):
+    # additional instances beyond those defaults are only reachable by
+    # authoring attributes under one of these prefixes, so all three must be
+    # listed here or the corresponding attributes are silently dropped (see
+    # _infer_multi_apply_schemas / _SensorAuthoring._apply_attributes).
     _MULTI_APPLY_SCHEMAS = {
         "omni:sensor:WpmAcoustic:sensorMount:": "OmniSensorWpmAcousticSensorMountAPI",
         "omni:sensor:WpmAcoustic:rxGroup:": "OmniSensorWpmAcousticRxGroupAPI",
+        "omni:sensor:WpmAcoustic:firingSeq:": "OmniSensorWpmAcousticFiringSeqAPI",
     }
 
     def _create_prim(self, path: str, attributes: dict[str, Any] | None) -> str:
-        """Create an OmniAcoustic prim with multi-instance schemas auto-applied.
+        """Create an OmniAcoustic prim.
 
-        Applies ``OmniSensorGenericAcousticWpmAPI`` and automatically infers
-        multi-instance schemas (sensor mount, receiver group) from attribute
-        key prefixes.
+        Applies ``OmniSensorGenericAcousticWpmAPI``. Multi-instance schemas
+        (sensor mount, receiver group, firing sequence) inferred from
+        attribute key prefixes are applied separately by
+        :meth:`_infer_multi_apply_schemas`, which the base class also runs
+        when wrapping an existing prim (not just when creating one).
 
         Args:
             path: USD prim path for the new acoustic sensor.
-            attributes: Optional mapping of attribute names to values. Keys
-                matching ``omni:sensor:WpmAcoustic:sensorMount:`` or
-                ``omni:sensor:WpmAcoustic:rxGroup:`` prefixes trigger automatic
-                multi-instance schema application.
+            attributes: Unused; accepted for signature compatibility with the
+                base class contract.
 
         Returns:
             The USD prim path of the created acoustic sensor.
         """
         prim = stage_utils.define_prim(path, "OmniAcoustic")
         prim.ApplyAPI("OmniSensorGenericAcousticWpmAPI")
-        if attributes is not None:
-            # apply multi-instance schemas inferred from attribute keys
-            applied_instances: set[str] = set()
-            for key in attributes:
-                for prefix, schema in self._MULTI_APPLY_SCHEMAS.items():
-                    if key.startswith(prefix):
-                        instance_name = key[len(prefix) :].split(":")[0]
-                        schema_instance = f"{schema}:{instance_name}"
-                        if schema_instance not in applied_instances:
-                            prim.ApplyAPI(schema, instance_name)
-                            applied_instances.add(schema_instance)
         # Attributes are applied by the base class after all schemas
         # (including additional ones passed via the schemas parameter)
         # have been applied.
         return path
+
+    @classmethod
+    def _infer_multi_apply_schemas(cls, path: str, attributes: dict[str, Any] | None) -> None:
+        """Infer and apply multi-instance API schemas from attribute key prefixes.
+
+        Runs for both newly created and wrapped existing OmniAcoustic prims
+        (see ``_SensorAuthoring.__init__``), so an instance attribute like
+        ``omni:sensor:WpmAcoustic:sensorMount:m003:position`` gets its owning
+        API instance applied before attribute values are set, whether the
+        prim was just created or already existed.
+
+        Args:
+            path: USD prim path.
+            attributes: Optional mapping of attribute names to values. Keys
+                matching ``omni:sensor:WpmAcoustic:sensorMount:``,
+                ``omni:sensor:WpmAcoustic:rxGroup:``, or
+                ``omni:sensor:WpmAcoustic:firingSeq:`` prefixes trigger
+                automatic multi-instance schema application.
+        """
+        if attributes is None:
+            return
+        prim = prim_utils.get_prim_at_path(path)
+        applied_instances: set[str] = set()
+        for key in attributes:
+            for prefix, schema in cls._MULTI_APPLY_SCHEMAS.items():
+                if key.startswith(prefix):
+                    instance_name = key[len(prefix) :].split(":")[0]
+                    schema_instance = f"{schema}:{instance_name}"
+                    if schema_instance not in applied_instances:
+                        prim.ApplyAPI(schema, instance_name)
+                        applied_instances.add(schema_instance)
 
     @staticmethod
     def create(
