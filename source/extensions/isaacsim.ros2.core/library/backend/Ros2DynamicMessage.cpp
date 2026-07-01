@@ -1096,6 +1096,18 @@ void Ros2DynamicMessageImpl::getMessageValues(const void* members,
                                               size_t& index,
                                               bool asOgnType)
 {
+    // `container` is the flat, positionally-ordered vector built by
+    // parseMessageFields(), which recurses into embedded (non-array) MESSAGE
+    // fields and appends their children in place rather than nesting them --
+    // so a non-array MESSAGE member has no slot of its own in `container`,
+    // only its children do. The `container.at(index++)` below advances past
+    // that slot speculatively for every member; the ROS_TYPE_MESSAGE case
+    // below undoes it with `--index` before recursing so the recursive call's
+    // own index++ consumes its children starting from the same slot. This
+    // increment/decrement pairing (mirrored in setMessageValues below) is the
+    // only thing keeping `index` aligned with `container` -- do not remove
+    // the `--index` or change how `index` is threaded through without
+    // re-deriving this invariant.
     auto messageMembers = reinterpret_cast<const rosidl_typesupport_introspection_c__MessageMembers*>(members);
     for (size_t i = 0; i < messageMembers->member_count_; ++i)
     {
@@ -1601,6 +1613,11 @@ void Ros2DynamicMessageImpl::setMessageValues(const void* members,
                                               size_t& index,
                                               bool fromOgnType)
 {
+    // See the matching invariant comment on getMessageValues() above: `index`
+    // must stay aligned with `container`'s flat, positionally-ordered slots,
+    // and the ROS_TYPE_MESSAGE case below relies on the `--index` /
+    // recursive-index++ pairing to do that for embedded (non-array) MESSAGE
+    // fields. Do not remove it without re-deriving the invariant.
     auto messageMembers = reinterpret_cast<const rosidl_typesupport_introspection_c__MessageMembers*>(members);
     for (size_t i = 0; i < messageMembers->member_count_; ++i)
     {

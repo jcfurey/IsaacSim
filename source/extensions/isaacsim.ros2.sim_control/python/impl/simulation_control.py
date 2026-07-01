@@ -136,6 +136,15 @@ class ROS2ServiceManager:
         # Distinguishes an intentional shutdown from a callback exception
         # escaping executor.spin() in _spin's restart loop.
         self._shutdown_requested = False
+        # Guards self.services/self.action_servers. shutdown() iterates and
+        # clears both dicts while register_service/register_action_server/
+        # unregister_service/unregister_action_server -- public API callable
+        # independently of shutdown() -- mutate the same dicts; without a lock
+        # a concurrent call races the iteration (RuntimeError: dictionary
+        # changed size during iteration, or a corrupted registry). Reentrant
+        # because shutdown() calls unregister_service()/
+        # unregister_action_server() itself while already holding the lock.
+        self._registry_lock = threading.RLock()
 
     def initialize(self) -> None:
         """Initialize the ROS2 node for simulation control services.
@@ -212,15 +221,16 @@ class ROS2ServiceManager:
         if self.executor_thread and self.executor_thread.is_alive():
             self.executor_thread.join(timeout=1.0)
 
-        # Unregister all services using the proper unregister methods
-        for service_name in self.services:
-            self.unregister_service(service_name, remove_from_dict=False)
-        self.services.clear()
+        with self._registry_lock:
+            # Unregister all services using the proper unregister methods
+            for service_name in self.services:
+                self.unregister_service(service_name, remove_from_dict=False)
+            self.services.clear()
 
-        # Unregister all action servers using the proper unregister methods
-        for action_name in self.action_servers:
-            self.unregister_action_server(action_name, remove_from_dict=False)
-        self.action_servers.clear()
+            # Unregister all action servers using the proper unregister methods
+            for action_name in self.action_servers:
+                self.unregister_action_server(action_name, remove_from_dict=False)
+            self.action_servers.clear()
 
         if self.node:
             self.node.destroy_node()
@@ -253,21 +263,25 @@ class ROS2ServiceManager:
             carb.log_error("Cannot register service: ROS2 ServiceManager not initialized")
             return False
 
-        if service_name in self.services:
-            carb.log_warn(f"Service '{service_name}' is already registered")
-            return False
+        with self._registry_lock:
+            if service_name in self.services:
+                carb.log_warn(f"Service '{service_name}' is already registered")
+                return False
 
-        try:
-            # Create service with callback group for parallel execution
-            service = self.node.create_service(
-                service_type, service_name, self._wrap_async_callback(callback), callback_group=self.callback_group
-            )
-            self.services[service_name] = service
-            carb.log_info(f"Registered ROS2 service: {service_name} with parallel callback execution")
-            return True
-        except Exception as e:
-            carb.log_error(f"Failed to register service '{service_name}': {e}")
-            return False
+            try:
+                # Create service with callback group for parallel execution
+                service = self.node.create_service(
+                    service_type,
+                    service_name,
+                    self._wrap_async_callback(callback),
+                    callback_group=self.callback_group,
+                )
+                self.services[service_name] = service
+                carb.log_info(f"Registered ROS2 service: {service_name} with parallel callback execution")
+                return True
+            except Exception as e:
+                carb.log_error(f"Failed to register service '{service_name}': {e}")
+                return False
 
     def unregister_service(self, service_name: str, remove_from_dict: bool = True) -> bool:
         """Unregister a ROS2 service.
@@ -303,20 +317,21 @@ class ROS2ServiceManager:
             >>> service_manager.services.clear()
 
         """
-        if not self.is_initialized or service_name not in self.services:
-            return False
+        with self._registry_lock:
+            if not self.is_initialized or service_name not in self.services:
+                return False
 
-        try:
-            if remove_from_dict:
-                service = self.services.pop(service_name)
-            else:
-                service = self.services[service_name]
-            self.node.destroy_service(service)
-            carb.log_info(f"Unregistered ROS2 service: {service_name}")
-            return True
-        except Exception as e:
-            carb.log_error(f"Failed to unregister service '{service_name}': {e}")
-            return False
+            try:
+                if remove_from_dict:
+                    service = self.services.pop(service_name)
+                else:
+                    service = self.services[service_name]
+                self.node.destroy_service(service)
+                carb.log_info(f"Unregistered ROS2 service: {service_name}")
+                return True
+            except Exception as e:
+                carb.log_error(f"Failed to unregister service '{service_name}': {e}")
+                return False
 
     def register_action_server(
         self,
@@ -343,31 +358,32 @@ class ROS2ServiceManager:
             carb.log_error("Cannot register action server: ROS2 ServiceManager not initialized")
             return False
 
-        if action_name in self.action_servers:
-            carb.log_warn(f"Action server '{action_name}' is already registered")
-            return False
+        with self._registry_lock:
+            if action_name in self.action_servers:
+                carb.log_warn(f"Action server '{action_name}' is already registered")
+                return False
 
-        try:
-            from rclpy.action import ActionServer
+            try:
+                from rclpy.action import ActionServer
 
-            # Create the action server with callback group for parallel execution
-            action_server = ActionServer(
-                node=self.node,
-                action_type=action_type,
-                action_name=action_name,
-                execute_callback=self._wrap_async_callback(execute_callback),
-                goal_callback=goal_callback,
-                cancel_callback=cancel_callback,
-                callback_group=self.callback_group,
-            )
+                # Create the action server with callback group for parallel execution
+                action_server = ActionServer(
+                    node=self.node,
+                    action_type=action_type,
+                    action_name=action_name,
+                    execute_callback=self._wrap_async_callback(execute_callback),
+                    goal_callback=goal_callback,
+                    cancel_callback=cancel_callback,
+                    callback_group=self.callback_group,
+                )
 
-            self.action_servers[action_name] = action_server
-            carb.log_info(f"Registered ROS2 action server: {action_name} with parallel callback execution")
-            return True
+                self.action_servers[action_name] = action_server
+                carb.log_info(f"Registered ROS2 action server: {action_name} with parallel callback execution")
+                return True
 
-        except Exception as e:
-            carb.log_error(f"Failed to register action server '{action_name}': {e}")
-            return False
+            except Exception as e:
+                carb.log_error(f"Failed to register action server '{action_name}': {e}")
+                return False
 
     def _wrap_async_callback(self, async_callback: callable) -> callable:
         """Wrap any async callback to work with ROS2 services and actions.
@@ -447,20 +463,21 @@ class ROS2ServiceManager:
             >>> service_manager.action_servers.clear()
 
         """
-        if not self.is_initialized or action_name not in self.action_servers:
-            return False
+        with self._registry_lock:
+            if not self.is_initialized or action_name not in self.action_servers:
+                return False
 
-        try:
-            if remove_from_dict:
-                action_server = self.action_servers.pop(action_name)
-            else:
-                action_server = self.action_servers[action_name]
-            action_server.destroy()
-            carb.log_info(f"Unregistered ROS2 action server: {action_name}")
-            return True
-        except Exception as e:
-            carb.log_error(f"Failed to unregister action server '{action_name}': {e}")
-            return False
+            try:
+                if remove_from_dict:
+                    action_server = self.action_servers.pop(action_name)
+                else:
+                    action_server = self.action_servers[action_name]
+                action_server.destroy()
+                carb.log_info(f"Unregistered ROS2 action server: {action_name}")
+                return True
+            except Exception as e:
+                carb.log_error(f"Failed to unregister action server '{action_name}': {e}")
+                return False
 
     def _spin(self) -> None:
         """Spin the ROS2 executor in a separate thread.

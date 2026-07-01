@@ -15,6 +15,8 @@
 
 #include "Ros2Impl.h"
 
+#include <carb/logging/Log.h>
+
 #include <isaacsim/ros2/core/Ros2Macros.h>
 #include <rcl/rcl.h>
 
@@ -33,6 +35,22 @@ void* Ros2ContextHandleImpl::getContext()
 void Ros2ContextHandleImpl::init(int argc, char const* const* argv, bool setDomainId, size_t domainId)
 {
     rcl_ret_t rc;
+    // A previous init() call reaching this point (even one where the later
+    // rcl_init() call itself failed, e.g. an invalid domain id) leaves
+    // m_initOptions holding a live allocation from rcl_init_options_init()
+    // below. shutdown() finalizes it and resets m_context to null, but if
+    // init() is ever called again without an intervening shutdown() (e.g. a
+    // caller retrying after isValid() reports false following a failed
+    // rcl_init()), overwriting m_initOptions here would leak that allocation
+    // every retry. Finalize it first whenever m_context is still set.
+    if (m_context)
+    {
+        rcl_ret_t finiRc = rcl_init_options_fini(&m_initOptions);
+        if (finiRc != RCL_RET_OK)
+        {
+            RCL_ERROR_MSG(Ros2ContextHandle, rcl_init_options_fini);
+        }
+    }
     // Initialize RCL init options and copy them
     m_initOptions = rcl_get_zero_initialized_init_options();
     rc = rcl_init_options_init(&m_initOptions, rcl_get_default_allocator());
@@ -103,6 +121,10 @@ bool Ros2ContextHandleImpl::shutdown(const char* shutdownReason)
     if (!m_context)
     {
         return true;
+    }
+    if (shutdownReason)
+    {
+        CARB_LOG_INFO("Ros2ContextHandle shutting down: %s", shutdownReason);
     }
     m_context.reset();
     // Finalize RCL options
