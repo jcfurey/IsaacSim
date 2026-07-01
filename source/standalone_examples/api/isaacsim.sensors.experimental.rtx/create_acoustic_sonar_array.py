@@ -13,46 +13,98 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Dense sonar-style acoustic array on a SINGLE OmniAcoustic prim.
+"""Dense multibeam-sonar-style acoustic array on a SINGLE OmniAcoustic prim.
 
-This example builds a dense multi-element ultrasonic array (default: 128
-elements) to approximate an imaging-sonar sensor. The key design decision is
+This example builds a dense multi-element acoustic array to approximate an
+imaging (multibeam) sonar, and beamforms the per-element output into the
+polar beams-x-range image such a sonar produces. The key design decision is
 that all elements live on ONE OmniAcoustic prim as ``sensorMount``
 multi-apply schema instances -- NOT as separate AcousticSensor objects:
 
 - One prim means ONE render product / Hydra pipeline, instead of one per
-  element. Per-render-product overhead (pipeline resources, GMO streams,
-  scheduling) is the dominant fixed VRAM/perf cost of an RTX sensor, so 128
-  separate sensors would multiply that cost 128x for no modeling benefit.
+  element. Per-render-product overhead is the dominant fixed VRAM/perf cost
+  of an RTX sensor, so N separate sensors would multiply that cost N-fold
+  for no modeling benefit.
 - The WPM acoustic model natively simulates multi-transmitter /
   multi-receiver topologies inside one trace pass: ray cost scales with the
-  number of *firing* transmitters (rays are emitted per firing event), while
-  additional receivers are nearly free. The GMO output labels every
-  amplitude sample with (x=tx mount ID, y=rx mount ID, z=channel ID), giving
-  the full signal-way matrix needed for beamforming.
-- The firing sequence (``firingSeq`` schema instances) defines which
-  transmitters fire, at what time offsets, on which channels, and which
-  receiver group listens -- modeling a real sonar's scan cycle within one
-  sensor frame.
+  number of *firing* transmitters, while additional receivers are nearly
+  free. The GMO output labels every amplitude sample with (x=tx mount ID,
+  y=rx mount ID, z=channel ID), giving the per-element waveform matrix that
+  the beamformer consumes.
 
-Scaling knobs (per-frame cost):
-- rays  ~ num_transmitters x (azSpanDeg*raysPerDeg) x (elSpanDeg*raysPerDeg)
-- GMO   ~ num_signal_ways x samples_per_signal_way, where
-  num_signal_ways ~ num_transmitters x num_receivers and
-  samples_per_signal_way ~ frame_period / sampleDuration
+The ``--preset oculus-m3000d-lf`` configuration approximates the Blueprint
+Subsea Oculus M3000d multibeam sonar in its low-frequency mode
+(1.2 MHz, 130 deg x 20 deg aperture, 512 beams at 0.25 deg separation,
+0.6 deg angular resolution, 0.1-30 m range):
 
-If your target element count exceeds what the acoustic plugin supports on a
-single prim, shard the array across a few prims (e.g. 4 prims x 32 mounts)
-rather than one prim per element -- each prim still costs a render product.
+- 168 receive elements at half-wavelength spacing give the same aperture
+  measured in wavelengths (~84 lambda) as the real 105 mm array, so the
+  beam pattern (0.6 deg beams, no grating lobes across the +/-65 deg fan)
+  is preserved even though the in-air wavelength differs.
+- One transmitter fires a fan ping per frame; all elements receive; 512
+  beams are synthesized in post by delay-and-sum, exactly like the real
+  unit beamforms its stave data.
+
+Fidelity notes (be aware of what this model can and cannot reproduce):
+
+- The WPM acoustic model is an IN-AIR ultrasonic model (c = 343 m/s; the
+  schema has no speed-of-sound parameter). Geometry in wavelengths (beam
+  pattern, FOV) is preserved, but time-of-flight is ~4.4x longer than in
+  water: a 30 m listening window takes 175 ms, capping the update rate at
+  ~5 Hz instead of the real unit's range-dependent up-to-40 Hz.
+- GMO ``scalar`` samples are amplitude ENVELOPES (the default sample
+  duration spans several carrier periods), so beamforming here is
+  non-coherent (envelope delay-and-sum). Peak/echo localization is
+  accurate to a fraction of a degree, but the -3 dB beamwidth is set by
+  time-delay alignment of envelopes (``~2.6 * c * pulse_sigma /
+  aperture``) rather than the coherent ``0.88 * lambda / aperture``: ~5
+  deg with this preset instead of the real unit's 0.6 deg. This floor is
+  frequency-invariant (the minimum pulse of a few carrier periods scales
+  with 1/f exactly as the wavelength-sized aperture does), so the only
+  lever is more aperture wavelengths: doubling the element count roughly
+  halves the beamwidth. True 0.6 deg beams would require phase-coherent
+  element data, which the GMO envelope output does not carry -- if you
+  need per-beam ranges at the real unit's angular resolution, pair this
+  sensor with (or substitute) an RTX lidar configured as a 130 x 20 deg,
+  512-column fan, which yields idealized multibeam geometry directly.
+  Speckle and the real unit's 2.5 mm bandwidth-driven range resolution
+  are likewise not reproduced (envelope range resolution here: ~0.9 cm).
+- Directivity/gain polynomials are the schema's generic ultrasonic
+  transducer defaults, not the Oculus element response.
 """
 
 import argparse
 import math
 import os
 
-from isaacsim import SimulationApp
+SPEED_OF_SOUND = 343.0  # m/s (air; the WPM acoustic model is an in-air ultrasonic model)
 
-parser = argparse.ArgumentParser(description="Dense sonar-style RTX Acoustic array example.")
+# Preset approximating the Oculus M3000d low-frequency mode. Element count:
+# a 0.6 deg beam needs an ~84-lambda aperture (0.88 * lambda / theta), which
+# at half-wavelength spacing is 168 elements; lambda/2 spacing is required to
+# steer across the full +/-65 deg fan without grating lobes.
+PRESETS = {
+    "oculus-m3000d-lf": dict(
+        num_elements=168,
+        num_transmitters=1,
+        geometry="line",
+        center_frequency=51200.0,  # in-air carrier; aperture is sized in wavelengths
+        az_span_deg=130.0,
+        el_span_deg=20.0,
+        tick_rate=5.0,  # 30 m two-way ToF in air is 175 ms -> at most ~5.7 Hz
+        sample_duration=25.6e-6,  # 4.4 mm range bins (two-way)
+        pulse_duration=51.2e-6,  # ~0.9 cm envelope range resolution; 2.6 carrier cycles
+        bandwidth=19500.0,  # ~1 / pulse_duration
+        num_beams=512,
+    ),
+}
+
+# two-stage parsing so a preset provides defaults while explicit flags win
+_pre = argparse.ArgumentParser(add_help=False)
+_pre.add_argument("--preset", type=str, default=None, choices=sorted(PRESETS.keys()))
+_pre_args, _ = _pre.parse_known_args()
+
+parser = argparse.ArgumentParser(description="Dense multibeam-sonar-style RTX Acoustic array example.", parents=[_pre])
 parser.add_argument("--test", default=False, action="store_true", help="Run in test mode.")
 parser.add_argument("--num-elements", type=int, default=128, help="Number of transducer elements in the array.")
 parser.add_argument(
@@ -61,25 +113,26 @@ parser.add_argument(
     default=1,
     help="Number of elements that fire (spread evenly across the array); all elements receive.",
 )
-parser.add_argument(
-    "--geometry",
-    type=str,
-    default="grid",
-    choices=["line", "grid", "ring"],
-    help="Array element layout.",
-)
+parser.add_argument("--geometry", type=str, default="grid", choices=["line", "grid", "ring"], help="Element layout.")
 parser.add_argument(
     "--center-frequency", type=float, default=51200.0, help="Center frequency in Hz (sets lambda/2 element spacing)."
 )
+parser.add_argument("--az-span-deg", type=float, default=None, help="Horizontal (azimuth) aperture in degrees.")
+parser.add_argument("--el-span-deg", type=float, default=None, help="Vertical (elevation) aperture in degrees.")
+parser.add_argument("--tick-rate", type=float, default=20.0, help="Sensor tick rate in Hz.")
+parser.add_argument("--sample-duration", type=float, default=None, help="Waveform sample duration in seconds.")
+parser.add_argument("--pulse-duration", type=float, default=None, help="Pulse duration in seconds.")
+parser.add_argument("--bandwidth", type=float, default=None, help="Bandwidth in Hz.")
+parser.add_argument("--num-beams", type=int, default=256, help="Number of beams to synthesize by delay-and-sum.")
 parser.add_argument(
     "--fire-interval-ms",
     type=float,
     default=2.0,
     help="Time offset between consecutive transmitter firings within a frame (ms).",
 )
+if _pre_args.preset is not None:
+    parser.set_defaults(**PRESETS[_pre_args.preset])
 args, _ = parser.parse_known_args()
-
-SPEED_OF_SOUND = 343.0  # m/s (air; the WPM acoustic model is an in-air ultrasonic model)
 
 
 def generate_sonar_array_attributes(
@@ -88,6 +141,11 @@ def generate_sonar_array_attributes(
     geometry: str,
     center_frequency: float,
     fire_interval_ms: float,
+    az_span_deg: float | None = None,
+    el_span_deg: float | None = None,
+    sample_duration: float | None = None,
+    pulse_duration: float | None = None,
+    bandwidth: float | None = None,
 ) -> dict:
     """Generate the OmniAcoustic attribute dict for a dense transducer array.
 
@@ -104,6 +162,11 @@ def generate_sonar_array_attributes(
             or ``"ring"`` (circle in the Y-Z plane).
         center_frequency: Center frequency in Hz; element spacing is lambda/2.
         fire_interval_ms: Offset between consecutive firing events in ms.
+        az_span_deg: Horizontal aperture in degrees (None: schema default).
+        el_span_deg: Vertical aperture in degrees (None: schema default).
+        sample_duration: Waveform sampling in seconds (None: schema default).
+        pulse_duration: Pulse duration in seconds (None: schema default).
+        bandwidth: Bandwidth in Hz (None: schema default).
 
     Returns:
         Attribute mapping for the ``Acoustic`` authoring class, containing
@@ -138,6 +201,15 @@ def generate_sonar_array_attributes(
         raise ValueError(f"Unknown geometry '{geometry}'")
 
     attributes = {"omni:sensor:WpmAcoustic:centerFrequency": center_frequency}
+    for name, value in (
+        ("azSpanDeg", az_span_deg),
+        ("elSpanDeg", el_span_deg),
+        ("sampleDuration", sample_duration),
+        ("pulseDuration", pulse_duration),
+        ("bandwidth", bandwidth),
+    ):
+        if value is not None:
+            attributes[f"omni:sensor:WpmAcoustic:{name}"] = value
     for i, position in enumerate(positions):
         mount = f"m{i + 1:03d}"
         attributes[f"omni:sensor:WpmAcoustic:sensorMount:{mount}:position"] = position
@@ -163,6 +235,67 @@ def generate_sonar_array_attributes(
     return attributes
 
 
+def beamform_das(
+    waveforms: "np.ndarray",
+    rx_y: "np.ndarray",
+    sample_duration: float,
+    num_beams: int,
+    az_span_deg: float,
+    speed_of_sound: float = SPEED_OF_SOUND,
+) -> tuple["np.ndarray", "np.ndarray", "np.ndarray"]:
+    """Non-coherent (envelope) delay-and-sum beamformer for a line array.
+
+    Synthesizes the polar beams-x-range image a multibeam sonar outputs from
+    the per-element envelope waveforms. Uses focused (near-field, spherical)
+    delays: for a candidate scatterer at range ``r`` along beam direction
+    ``phi``, the expected two-way time at element ``e`` is
+    ``(r + |target - p_e|) / c`` (transmit from array center, receive at the
+    element), which handles both near- and far-field geometry.
+
+    Args:
+        waveforms: Envelope matrix of shape ``(num_elements, num_samples)``,
+            row ``e`` being the waveform of the element at ``rx_y[e]``.
+        rx_y: Element positions along the array axis, in meters.
+        sample_duration: Time per waveform sample, in seconds.
+        num_beams: Number of beams across the fan.
+        az_span_deg: Total fan width in degrees (beams span +/- half of it).
+        speed_of_sound: Propagation speed in m/s.
+
+    Returns:
+        ``(image, beam_angles_deg, ranges_m)`` where ``image`` has shape
+        ``(num_beams, num_samples)``.
+
+    Note:
+        This is a plain-NumPy reference implementation that takes on the
+        order of seconds per 512-beam image (the example's writer runs it
+        once, on the first valid frame). For per-frame imaging, port the
+        gather-and-sum to Warp/CUDA.
+    """
+    import numpy as np
+
+    num_elements, num_samples = waveforms.shape
+    beam_angles = np.linspace(-az_span_deg / 2.0, az_span_deg / 2.0, num_beams)
+    # two-way range axis: sample k corresponds to a scatterer at r = k*c*dt/2
+    ranges = np.arange(num_samples) * speed_of_sound * sample_duration / 2.0
+    image = np.zeros((num_beams, num_samples), dtype=np.float64)
+    element_indices = np.arange(num_elements)[:, None]
+    for b, angle_deg in enumerate(beam_angles):
+        angle = math.radians(angle_deg)
+        # candidate scatterer positions along this beam (boresight = +X, array along Y)
+        tx_x = ranges * math.cos(angle)
+        tx_y = ranges * math.sin(angle)
+        # per-element receive distance, shape (num_elements, num_samples)
+        dist_rx = np.sqrt(tx_x[None, :] ** 2 + (tx_y[None, :] - rx_y[:, None]) ** 2)
+        t = (ranges[None, :] + dist_rx) / speed_of_sound
+        idx = np.rint(t / sample_duration).astype(np.int64)
+        valid = idx < num_samples
+        np.clip(idx, 0, num_samples - 1, out=idx)
+        image[b] = np.sum(waveforms[element_indices, idx] * valid, axis=0)
+    return image, beam_angles, ranges
+
+
+from isaacsim import SimulationApp
+
 simulation_app = SimulationApp({"headless": True})
 
 output_dir = os.path.join(os.getcwd(), "_example_output_isaacsim.sensors.experimental.rtx", "create_acoustic_sonar_array")
@@ -178,9 +311,10 @@ from omni.replicator.core import Writer
 # =============================================================================
 # CREATE A SIMPLE SCENE
 # =============================================================================
+# targets spread across the fan (boresight +X): ~0 deg, ~+21 deg, ~-27 deg
 
-for i, (x, y) in enumerate([(3, 0), (5, 2), (4, -2)]):
-    Cube(f"/World/target_{i}", positions=np.array([float(x), float(y), 0.5]), scales=np.array([1.0, 1.0, 2.0]))
+for i, (x, y) in enumerate([(4.0, 0.0), (8.0, 3.0), (10.0, -5.0)]):
+    Cube(f"/World/target_{i}", positions=np.array([x, y, 0.5]), scales=np.array([1.0, 1.0, 2.0]))
 
 print("Created 3 target cubes")
 
@@ -194,12 +328,20 @@ attributes = generate_sonar_array_attributes(
     geometry=args.geometry,
     center_frequency=args.center_frequency,
     fire_interval_ms=args.fire_interval_ms,
+    az_span_deg=args.az_span_deg,
+    el_span_deg=args.el_span_deg,
+    sample_duration=args.sample_duration,
+    pulse_duration=args.pulse_duration,
+    bandwidth=args.bandwidth,
 )
+element_positions = [
+    attributes[f"omni:sensor:WpmAcoustic:sensorMount:m{i + 1:03d}:position"] for i in range(args.num_elements)
+]
 
 acoustic = Acoustic(
     "/World/sonar_array",
     aux_output_level="BASIC",  # numSgws / numSamplesPerSgw in auxiliary data
-    tick_rate=20.0,
+    tick_rate=args.tick_rate,
     translations=np.array([0.0, 0.0, 0.5]),
     attributes=attributes,
 )
@@ -210,18 +352,18 @@ spacing_mm = SPEED_OF_SOUND / args.center_frequency / 2.0 * 1e3
 print(
     f"Created sonar array at {acoustic.paths[0]}: {args.num_elements} elements "
     f"({args.geometry}, {spacing_mm:.2f} mm spacing), {args.num_transmitters} transmitter(s), "
-    f"expected signal ways per firing: {args.num_transmitters} x {args.num_elements} "
-    f"= {args.num_transmitters * args.num_elements}"
+    f"tick rate {args.tick_rate} Hz"
+    + (f", preset '{args.preset}'" if args.preset else "")
 )
 
 
 # =============================================================================
-# WRITER: ASSEMBLE THE BEAMFORMING-READY WAVEFORM MATRIX
+# WRITER: ASSEMBLE THE WAVEFORM MATRIX AND BEAMFORM THE SONAR IMAGE
 # =============================================================================
 
 
 class GmoSonarArrayWriter(Writer):
-    """Writer that reassembles GMO samples into a (signal_ways, samples) matrix."""
+    """Writer that beamforms GMO element waveforms into a beams-x-range image."""
 
     def __init__(self) -> None:
         self.data_structure = "renderProduct"
@@ -229,7 +371,7 @@ class GmoSonarArrayWriter(Writer):
         self._reported = False
 
     def write(self, data: dict[str, object]) -> None:
-        """Build the per-signal-way waveform matrix and report echo ranges once."""
+        """Build the per-element waveform matrix, beamform, and report once."""
         if "renderProducts" not in data:
             return
         for _rp_name, rp_data in data["renderProducts"].items():
@@ -243,33 +385,70 @@ class GmoSonarArrayWriter(Writer):
             self._reported = True
 
             samples_per_sgw = getattr(gmo, "numSamplesPerSgw", 0)
+            tx_ids = np.ctypeslib.as_array(gmo.x, shape=(n,))
+            rx_ids = np.ctypeslib.as_array(gmo.y, shape=(n,))
             if not samples_per_sgw:
                 # without auxiliary data, derive the count from the first
                 # signal-way boundary (samples of one signal way are contiguous)
-                tx_ids = np.ctypeslib.as_array(gmo.x, shape=(n,))
-                rx_ids = np.ctypeslib.as_array(gmo.y, shape=(n,))
                 boundary = np.flatnonzero((np.diff(tx_ids) != 0) | (np.diff(rx_ids) != 0))
                 samples_per_sgw = int(boundary[0] + 1) if boundary.size else n
             num_sgws = n // samples_per_sgw
 
             amplitudes = np.ctypeslib.as_array(gmo.scalar, shape=(n,))
-            # rows: signal ways (tx-rx pairs); columns: time samples.
-            # This is the matrix a delay-and-sum (or any) beamformer consumes.
             waveforms = amplitudes[: num_sgws * samples_per_sgw].reshape(num_sgws, samples_per_sgw)
-
-            tx_ids = np.ctypeslib.as_array(gmo.x, shape=(n,))[::samples_per_sgw][:num_sgws]
-            rx_ids = np.ctypeslib.as_array(gmo.y, shape=(n,))[::samples_per_sgw][:num_sgws]
-
+            sgw_rx = rx_ids[::samples_per_sgw][:num_sgws]
+            sgw_tx = tx_ids[::samples_per_sgw][:num_sgws]
             print(f"Waveform matrix: {waveforms.shape} (signal ways x samples)")
-            print(f"  transmitters seen: {np.unique(tx_ids).tolist()}")
-            print(f"  receivers seen:    {len(np.unique(rx_ids))} unique elements")
 
-            # crude single-echo range estimate per signal way, from the peak
-            # sample index: range = t_peak * c / 2
-            sample_duration = 0.0001024  # schema default omni:sensor:WpmAcoustic:sampleDuration
-            peak_idx = np.argmax(np.abs(waveforms), axis=1)
-            ranges = peak_idx * sample_duration * SPEED_OF_SOUND / 2.0
-            print(f"  echo range estimate: median {np.median(ranges):.2f} m across {num_sgws} signal ways")
+            # beamform one ping: with multiple transmitters there are several
+            # signal ways per receiver, so keep only the first transmitter's
+            # rows (one row per receiving element)
+            first_tx_mask = sgw_tx == sgw_tx.min()
+            waveforms = waveforms[first_tx_mask]
+            sgw_rx = sgw_rx[first_tx_mask]
+
+            # order rows by element index. GMO reports mount IDs; map the
+            # sorted unique receiver IDs onto element order (all elements
+            # receive, so the sorted ID order matches element order).
+            order = np.argsort(sgw_rx, kind="stable")
+            unique_rx = np.unique(sgw_rx)
+            if unique_rx.size != len(element_positions):
+                print(
+                    f"  WARNING: {unique_rx.size} receivers seen, expected {len(element_positions)}; "
+                    "beamforming with the receivers present"
+                )
+            rx_y = np.asarray([element_positions[min(i, len(element_positions) - 1)][1] for i in range(unique_rx.size)])
+            sample_duration = args.sample_duration or 0.0001024  # schema default
+            az_span = args.az_span_deg or 90.0  # schema default
+
+            image, beam_angles, ranges = beamform_das(
+                waveforms[order], rx_y, sample_duration, args.num_beams, az_span
+            )
+            np.save(os.path.join(output_dir, "sonar_image.npy"), image)
+            np.save(os.path.join(output_dir, "beam_angles_deg.npy"), beam_angles)
+            np.save(os.path.join(output_dir, "ranges_m.npy"), ranges)
+            peak = np.unravel_index(np.argmax(image), image.shape)
+            print(
+                f"Sonar image: {image.shape} (beams x range bins), saved to {output_dir}\n"
+                f"  strongest echo: beam {beam_angles[peak[0]]:+.1f} deg, range {ranges[peak[1]]:.2f} m"
+            )
+            try:
+                import matplotlib
+
+                matplotlib.use("Agg")
+                import matplotlib.pyplot as plt
+
+                db = 20.0 * np.log10(np.maximum(image, 1e-12) / max(image.max(), 1e-12))
+                fig, ax = plt.subplots(subplot_kw={"projection": "polar"}, figsize=(8, 6))
+                theta = np.radians(beam_angles)
+                ax.pcolormesh(theta, ranges, np.clip(db, -40.0, 0.0).T, cmap="viridis")
+                ax.set_thetalim(theta.min(), theta.max())
+                ax.set_theta_zero_location("N")
+                ax.set_title("Acoustic array: beamformed sonar image (dB)")
+                fig.savefig(os.path.join(output_dir, "sonar_image.png"), dpi=120)
+                print(f"  saved {os.path.join(output_dir, 'sonar_image.png')}")
+            except ImportError:
+                print("  matplotlib not available; skipped PNG rendering")
 
 
 rep.WriterRegistry.register(GmoSonarArrayWriter)
@@ -286,7 +465,7 @@ timeline = omni.timeline.get_timeline_interface()
 timeline.play()
 
 frame_count = 0
-while simulation_app.is_running() and (not args.test or frame_count < 20):
+while simulation_app.is_running() and (not args.test or frame_count < 40):
     simulation_app.update()
     frame_count += 1
 
