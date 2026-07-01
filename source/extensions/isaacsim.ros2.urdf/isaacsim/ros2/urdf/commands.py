@@ -69,6 +69,16 @@ class URDFImportFromROS2Node(omni.kit.commands.Command):
             observer_name="isaacsim.ros2.urdf.commands.URDFImportFromROS2Node._on_app_update",
         )
 
+    def __del__(self) -> None:
+        """Release the app-update subscription if description_received_fn never fired.
+
+        Without this, a command whose ROS 2 node never responds (or is
+        dropped before on_app_update ever sees self.finished) keeps its
+        GLOBAL_EVENT_UPDATE observer registered forever, keeping this command
+        object alive and ticking every frame indefinitely.
+        """
+        self.__subscription = None
+
     def on_app_update(self, event: typing.Any) -> None:
         """Handle app update ticks to trigger import completion.
 
