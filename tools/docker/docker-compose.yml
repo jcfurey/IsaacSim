@@ -19,9 +19,12 @@
 #   # Build the Isaac Sim image first (see README.md)
 #   ISAACSIM_HOST=<host-ip> docker compose -f tools/docker/docker-compose.yml up --build -d
 #
-# Multiple instances (use -p to namespace, override ports and GPU):
-#   GPU_DEVICE=0 ISAACSIM_SIGNAL_PORT=49100 WEB_VIEWER_PORT=8210 docker compose -p isim1 -f tools/docker/docker-compose.yml up --build -d
-#   GPU_DEVICE=1 ISAACSIM_SIGNAL_PORT=49200 WEB_VIEWER_PORT=8211 docker compose -p isim2 -f tools/docker/docker-compose.yml up --build -d
+# Multiple instances (use -p to namespace, override ports and GPU). Because this
+# compose file uses network_mode: host, every instance shares the host's network --
+# give each one its own ROS_DOMAIN_ID (see "Discovery between container and host"
+# below) or their ROS 2 graphs will collide on the same DDS domain and topics:
+#   GPU_DEVICE=0 ISAACSIM_SIGNAL_PORT=49100 WEB_VIEWER_PORT=8210 ROS_DOMAIN_ID=1 docker compose -p isim1 -f tools/docker/docker-compose.yml up --build -d
+#   GPU_DEVICE=1 ISAACSIM_SIGNAL_PORT=49200 WEB_VIEWER_PORT=8211 ROS_DOMAIN_ID=2 docker compose -p isim2 -f tools/docker/docker-compose.yml up --build -d
 #
 # Override any variable below via the shell environment or a .env file next to
 # this compose file.  Set ISAAC_SIM_DATA to change the host directory used for

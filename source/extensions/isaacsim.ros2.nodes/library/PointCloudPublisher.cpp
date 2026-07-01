@@ -53,8 +53,6 @@ bool PointCloudPublisher::prepareFromHost(const void* data,
         return false;
     }
 
-    m_tasks.wait();
-
     if (!shouldPublish())
     {
         return false;
@@ -92,8 +90,6 @@ bool PointCloudPublisher::prepareFromDevice(
     {
         return false;
     }
-
-    m_tasks.wait();
 
     if (!shouldPublish())
     {
@@ -213,7 +209,6 @@ void PointCloudPublisher::destroyCudaStream()
 
 void PointCloudPublisher::reset()
 {
-    m_tasks.wait();
     destroyCudaStream();
 
     if (m_deviceBuffer)

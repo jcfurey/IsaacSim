@@ -15,9 +15,6 @@
 
 #pragma once
 
-#include <carb/tasking/ITasking.h>
-#include <carb/tasking/TaskingUtils.h>
-
 #include <isaacsim/core/includes/ScopedCudaDevice.h>
 #include <isaacsim/ros2/nodes/PublisherBase.h>
 
@@ -143,8 +140,6 @@ private:
 
     uint8_t* m_deviceBuffer = nullptr;
     size_t m_deviceBufferSize = 0;
-
-    carb::tasking::TaskGroup m_tasks;
 };
 
 } // namespace nodes

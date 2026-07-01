@@ -479,10 +479,14 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 auto inputValue = getAttributeReadableData<bool>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                if (checkCondition(inputValue, "Unable to read bool value"))
-                {
-                    messageData.push_back(std::make_shared<bool>(inputValue ? *inputValue : false));
-                }
+                // Always push a placeholder value even on failure (matching the array
+                // branches above): messageData must have exactly one entry per
+                // messageField, in order, since writeData() below indexes it
+                // positionally. Gating the push on checkCondition's result silently
+                // dropped this field's slot on a read failure, misaligning every
+                // subsequent field against messageFields for the rest of this call.
+                checkCondition(inputValue, "Unable to read bool value");
+                messageData.push_back(std::make_shared<bool>(inputValue ? *inputValue : false));
             }
             break;
         }
@@ -504,10 +508,10 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 auto inputValue = getAttributeReadableData<uint8_t>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                if (checkCondition(inputValue, "Unable to read uchar value"))
-                {
-                    messageData.push_back(std::make_shared<uint8_t>(inputValue ? *inputValue : 0));
-                }
+                // See the eBool case above: always push, even on failure, to keep
+                // messageData aligned with messageFields.
+                checkCondition(inputValue, "Unable to read uchar value");
+                messageData.push_back(std::make_shared<uint8_t>(inputValue ? *inputValue : 0));
             }
             break;
         }
@@ -529,10 +533,10 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 auto inputValue = getAttributeReadableData<int32_t>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                if (checkCondition(inputValue, "Unable to read int32 value"))
-                {
-                    messageData.push_back(std::make_shared<int32_t>(inputValue ? *inputValue : 0));
-                }
+                // See the eBool case above: always push, even on failure, to keep
+                // messageData aligned with messageFields.
+                checkCondition(inputValue, "Unable to read int32 value");
+                messageData.push_back(std::make_shared<int32_t>(inputValue ? *inputValue : 0));
             }
             break;
         }
@@ -554,10 +558,10 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 auto inputValue = getAttributeReadableData<uint32_t>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                if (checkCondition(inputValue, "Unable to read uint32 value"))
-                {
-                    messageData.push_back(std::make_shared<uint32_t>(inputValue ? *inputValue : 0));
-                }
+                // See the eBool case above: always push, even on failure, to keep
+                // messageData aligned with messageFields.
+                checkCondition(inputValue, "Unable to read uint32 value");
+                messageData.push_back(std::make_shared<uint32_t>(inputValue ? *inputValue : 0));
             }
             break;
         }
@@ -579,10 +583,10 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 auto inputValue = getAttributeReadableData<int64_t>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                if (checkCondition(inputValue, "Unable to read int64 value"))
-                {
-                    messageData.push_back(std::make_shared<int64_t>(inputValue ? *inputValue : 0));
-                }
+                // See the eBool case above: always push, even on failure, to keep
+                // messageData aligned with messageFields.
+                checkCondition(inputValue, "Unable to read int64 value");
+                messageData.push_back(std::make_shared<int64_t>(inputValue ? *inputValue : 0));
             }
             break;
         }
@@ -604,10 +608,10 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 auto inputValue = getAttributeReadableData<uint64_t>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                if (checkCondition(inputValue, "Unable to read uint64 value"))
-                {
-                    messageData.push_back(std::make_shared<uint64_t>(inputValue ? *inputValue : 0));
-                }
+                // See the eBool case above: always push, even on failure, to keep
+                // messageData aligned with messageFields.
+                checkCondition(inputValue, "Unable to read uint64 value");
+                messageData.push_back(std::make_shared<uint64_t>(inputValue ? *inputValue : 0));
             }
             break;
         }
@@ -629,10 +633,10 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 auto inputValue = getAttributeReadableData<float>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                if (checkCondition(inputValue, "Unable to read float value"))
-                {
-                    messageData.push_back(std::make_shared<float>(inputValue ? *inputValue : 0.0));
-                }
+                // See the eBool case above: always push, even on failure, to keep
+                // messageData aligned with messageFields.
+                checkCondition(inputValue, "Unable to read float value");
+                messageData.push_back(std::make_shared<float>(inputValue ? *inputValue : 0.0));
             }
             break;
         }
@@ -654,10 +658,10 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 auto inputValue = getAttributeReadableData<double>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                if (checkCondition(inputValue, "Unable to read double value"))
-                {
-                    messageData.push_back(std::make_shared<double>(inputValue ? *inputValue : 0.0));
-                }
+                // See the eBool case above: always push, even on failure, to keep
+                // messageData aligned with messageFields.
+                checkCondition(inputValue, "Unable to read double value");
+                messageData.push_back(std::make_shared<double>(inputValue ? *inputValue : 0.0));
             }
             break;
         }
@@ -683,10 +687,10 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
                 auto inputValue = getAttributeReadableData<NameToken>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
                 std::string str = inputValue ? db.tokenToString(*inputValue) : "";
-                if (checkCondition(inputValue, "Unable to read token value"))
-                {
-                    messageData.push_back(std::make_shared<std::string>(str));
-                }
+                // See the eBool case above: always push, even on failure, to keep
+                // messageData aligned with messageFields.
+                checkCondition(inputValue, "Unable to read token value");
+                messageData.push_back(std::make_shared<std::string>(str));
             }
             break;
         }

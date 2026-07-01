@@ -92,21 +92,27 @@ from geometry_msgs.msg import Twist
 node = rclpy.create_node("carter_stereo")
 publisher = node.create_publisher(Twist, "cmd_vel", 10)
 
-frame = 0
-while simulation_app.is_running():
-    # Run with a fixed step size
-    simulation_app.update()
+try:
+    frame = 0
+    while simulation_app.is_running():
+        # Run with a fixed step size
+        simulation_app.update()
 
-    # Publish the ROS Twist message every 2 frames
-    if frame % 2 == 0:
-        message = Twist()
-        message.angular.z = 0.5  # spin in place
-        publisher.publish(message)
+        # Publish the ROS Twist message every 2 frames
+        if frame % 2 == 0:
+            message = Twist()
+            message.angular.z = 0.5  # spin in place
+            publisher.publish(message)
 
-    if args.test and frame > 10:
-        break
-    frame = frame + 1
-node.destroy_node()
-rclpy.shutdown()
-app_utils.stop()
-simulation_app.close()
+        if args.test and frame > 10:
+            break
+        frame = frame + 1
+finally:
+    # Run cleanup (rclpy.shutdown() in particular) even if the loop raises,
+    # mirroring the try/finally pattern in subscriber.py -- otherwise an
+    # exception here leaves the DDS participant running and skips
+    # simulation_app.close().
+    node.destroy_node()
+    rclpy.shutdown()
+    app_utils.stop()
+    simulation_app.close()
