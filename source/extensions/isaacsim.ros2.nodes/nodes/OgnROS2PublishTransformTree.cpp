@@ -262,12 +262,24 @@ public:
                 msg.translationY = trans[1] * stageUnits;
                 msg.translationZ = trans[2] * stageUnits;
 
-                // orientations are stored as (x, y, z, w)
-                const pxr::GfVec4d& ori = orientations[i];
-                msg.rotationX = ori[0];
-                msg.rotationY = ori[1];
-                msg.rotationZ = ori[2];
-                msg.rotationW = ori[3];
+                // orientations are stored as (x, y, z, w). This is external, graph-provided data
+                // (from OgnIsaacComputeTransformTree or a user-authored connection) rather than a
+                // pxr::GfQuatd freshly extracted via ExtractRotationQuat, so unit length is not
+                // guaranteed: upstream composes quaternions with raw Hamilton products (no
+                // renormalization) and float32 tensor reads can carry drift. Normalize here, at the
+                // point the message fields are assigned, so a non-unit quaternion never reaches the
+                // wire. Fall back to identity for the degenerate (near-zero) case rather than
+                // publishing NaNs.
+                pxr::GfQuatd quat(ori[3], ori[0], ori[1], ori[2]); // GfQuatd ctor is (real, imaginary)
+                if (quat.Normalize(1e-6) == 0.0)
+                {
+                    quat = pxr::GfQuatd::GetIdentity();
+                }
+                const pxr::GfVec3d& imag = quat.GetImaginary();
+                msg.rotationX = imag[0];
+                msg.rotationY = imag[1];
+                msg.rotationZ = imag[2];
+                msg.rotationW = quat.GetReal();
             }
         }
         else
@@ -297,10 +309,21 @@ public:
                 currentMsg.translationY = t.p.y * static_cast<float>(stageUnits);
                 currentMsg.translationZ = t.p.z * static_cast<float>(stageUnits);
 
-                currentMsg.rotationX = t.q.x;
-                currentMsg.rotationY = t.q.y;
-                currentMsg.rotationZ = t.q.z;
-                currentMsg.rotationW = t.q.w;
+                // t.q is the result of PxTransform::transformInv()/operator* composition
+                // (PoseTree::processAllFrames chains parent-inverse * child and, for cameras, an
+                // extra 180-degree x-axis rotation). These are raw PxQuat Hamilton products with no
+                // renormalization step, so t.q can drift from unit length after several compositions.
+                // Normalize before writing into the message, matching the external-data path above.
+                pxr::GfQuatd quat(t.q.w, t.q.x, t.q.y, t.q.z); // GfQuatd ctor is (real, imaginary)
+                if (quat.Normalize(1e-6) == 0.0)
+                {
+                    quat = pxr::GfQuatd::GetIdentity();
+                }
+                const pxr::GfVec3d& imag = quat.GetImaginary();
+                currentMsg.rotationX = imag[0];
+                currentMsg.rotationY = imag[1];
+                currentMsg.rotationZ = imag[2];
+                currentMsg.rotationW = quat.GetReal();
             };
 
             m_poseTree->processAllFrames(addPoseLambda);

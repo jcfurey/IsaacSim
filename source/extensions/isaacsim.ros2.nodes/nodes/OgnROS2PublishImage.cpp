@@ -356,6 +356,11 @@ public:
             const std::string& qosProfile = db.inputs.qosProfile();
             if (qosProfile.empty())
             {
+                // ROS 2 convention for image topics: use "sensor data" QoS (best-effort,
+                // shallow depth) so a slow/absent subscriber cannot back up the DDS queue and
+                // add latency to the live camera stream. This only applies when the user has
+                // not explicitly supplied a qosProfile above.
+                qos.reliability = Ros2QoSReliabilityPolicy::eBestEffort;
                 qos.depth = db.inputs.queueSize();
             }
             else
@@ -822,7 +827,19 @@ public:
             m_nitrosBridgeTasks.wait();
 
             auto& workerThread = PublishImageWorkerThread::getInstance();
-            workerThread.shutdown();
+            // Wait for only *this* instance's queued/in-flight jobs on the shared worker to
+            // finish before we free m_stream/m_message/m_publisher below - the worker thread
+            // itself is process-wide and shared with other camera node instances, so we must
+            // not stop it here (see PublishImageWorkerThread::release()).
+            workerThread.drainInstance(this);
+            if (m_registeredWithWorker)
+            {
+                // Give up our claim on the shared worker. It is only actually stopped once every
+                // registered instance has released it, so other cameras keep publishing
+                // uninterrupted while this instance is reset/deleted.
+                workerThread.release();
+                m_registeredWithWorker = false;
+            }
         }
         if (m_streamNotCreated == false)
         {
@@ -875,6 +892,9 @@ private:
     bool m_multithreadingDisabled = false;
     bool m_nitrosBridgeEnabled = false;
     bool m_publishWithQueueThread = true;
+    // Tracks whether this instance currently holds a reference on the process-wide
+    // PublishImageWorkerThread singleton, so reset() releases it at most once.
+    bool m_registeredWithWorker = false;
 };
 
 void PublishImageWorkerThread::_workerThreadFunction()
