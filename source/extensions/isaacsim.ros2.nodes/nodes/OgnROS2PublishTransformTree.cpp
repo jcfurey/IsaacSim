@@ -279,6 +279,7 @@ public:
                 // point the message fields are assigned, so a non-unit quaternion never reaches the
                 // wire. Fall back to identity for the degenerate (near-zero) case rather than
                 // publishing NaNs.
+                const pxr::GfVec4d& ori = orientations[i];
                 pxr::GfQuatd quat(ori[3], ori[0], ori[1], ori[2]); // GfQuatd ctor is (real, imaginary)
                 if (quat.Normalize(1e-6) == 0.0)
                 {

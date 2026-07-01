@@ -190,7 +190,11 @@ class ROS2CoreExtension(omni.ext.IExt):
             command = ["isaacsim.ros2.core.check.exe", ros_lib_path]
 
         try:
-            output = subprocess.check_output(command, cwd=path)
+            # Merge stderr into the captured output: check_output only captures
+            # stdout by default, so without this the checker's actual error
+            # diagnostics (usually written to stderr) would bypass grepexc.output
+            # entirely and never reach the carb.log_error() below.
+            output = subprocess.check_output(command, cwd=path, stderr=subprocess.STDOUT)
             return True
         except subprocess.CalledProcessError as grepexc:
             # Route the checker's stderr through Carb so the user actually sees

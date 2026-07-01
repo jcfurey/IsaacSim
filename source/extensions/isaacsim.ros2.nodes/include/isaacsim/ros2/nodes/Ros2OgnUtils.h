@@ -451,7 +451,12 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
                                      bool isOutput)
 {
     auto messageFields = std::static_pointer_cast<Ros2DynamicMessage>(message)->getMessageFields();
-    std::vector<std::shared_ptr<void>> messageData;
+    // Reuse the message's persistent container (one shared_ptr<T> slot per
+    // field, allocated once in Ros2DynamicMessageImpl::parseMessageFields)
+    // instead of building a brand-new vector and make_shared'ing every field's
+    // value from scratch on every call. This mirrors the pattern
+    // OgnROS2Publisher::publisherCallback already uses for the same purpose.
+    const auto& messageData = std::static_pointer_cast<Ros2DynamicMessage>(message)->getVectorContainer(true);
     for (size_t i = 0; i < messageFields.size(); ++i)
     {
         auto messageField = messageFields.at(i);
@@ -461,32 +466,30 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
         {
             if (messageField.isArray)
             {
-                size_t inputSize;
+                size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<bool*>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
-                std::vector<bool> data(inputSize);
+                auto data = std::static_pointer_cast<std::vector<bool>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read bool array"))
                 {
+                    data->resize(inputSize);
                     // std::vector<bool> is a specialization that has no ::data
-                    for (size_t j = 0; j < data.size(); ++j)
+                    for (size_t j = 0; j < inputSize; ++j)
                     {
-                        data[j] = *(*inputValue + j);
+                        (*data)[j] = *(*inputValue + j);
                     }
                 }
-                messageData.push_back(std::make_shared<std::vector<bool>>(data));
+                else
+                {
+                    data->clear();
+                }
             }
             else
             {
                 auto inputValue = getAttributeReadableData<bool>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                // Always push a placeholder value even on failure (matching the array
-                // branches above): messageData must have exactly one entry per
-                // messageField, in order, since writeData() below indexes it
-                // positionally. Gating the push on checkCondition's result silently
-                // dropped this field's slot on a read failure, misaligning every
-                // subsequent field against messageFields for the rest of this call.
                 checkCondition(inputValue, "Unable to read bool value");
-                messageData.push_back(std::make_shared<bool>(inputValue ? *inputValue : false));
+                *std::static_pointer_cast<bool>(messageData[i]) = inputValue ? *inputValue : false;
             }
             break;
         }
@@ -494,24 +497,26 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
         {
             if (messageField.isArray)
             {
-                size_t inputSize;
+                size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<uint8_t*>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
-                std::vector<uint8_t> data(inputSize);
+                auto data = std::static_pointer_cast<std::vector<uint8_t>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read uchar array"))
                 {
-                    std::memcpy(data.data(), *inputValue, inputSize * sizeof(uint8_t));
+                    data->resize(inputSize);
+                    std::memcpy(data->data(), *inputValue, inputSize * sizeof(uint8_t));
                 }
-                messageData.push_back(std::make_shared<std::vector<uint8_t>>(data));
+                else
+                {
+                    data->clear();
+                }
             }
             else
             {
                 auto inputValue = getAttributeReadableData<uint8_t>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                // See the eBool case above: always push, even on failure, to keep
-                // messageData aligned with messageFields.
                 checkCondition(inputValue, "Unable to read uchar value");
-                messageData.push_back(std::make_shared<uint8_t>(inputValue ? *inputValue : 0));
+                *std::static_pointer_cast<uint8_t>(messageData[i]) = inputValue ? *inputValue : 0;
             }
             break;
         }
@@ -519,24 +524,26 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
         {
             if (messageField.isArray)
             {
-                size_t inputSize;
+                size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<int32_t*>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
-                std::vector<int32_t> data(inputSize);
+                auto data = std::static_pointer_cast<std::vector<int32_t>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read int32 array"))
                 {
-                    std::memcpy(data.data(), *inputValue, inputSize * sizeof(int32_t));
+                    data->resize(inputSize);
+                    std::memcpy(data->data(), *inputValue, inputSize * sizeof(int32_t));
                 }
-                messageData.push_back(std::make_shared<std::vector<int32_t>>(data));
+                else
+                {
+                    data->clear();
+                }
             }
             else
             {
                 auto inputValue = getAttributeReadableData<int32_t>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                // See the eBool case above: always push, even on failure, to keep
-                // messageData aligned with messageFields.
                 checkCondition(inputValue, "Unable to read int32 value");
-                messageData.push_back(std::make_shared<int32_t>(inputValue ? *inputValue : 0));
+                *std::static_pointer_cast<int32_t>(messageData[i]) = inputValue ? *inputValue : 0;
             }
             break;
         }
@@ -544,24 +551,26 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
         {
             if (messageField.isArray)
             {
-                size_t inputSize;
+                size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<uint32_t*>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
-                std::vector<uint32_t> data(inputSize);
+                auto data = std::static_pointer_cast<std::vector<uint32_t>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read uint32 array"))
                 {
-                    std::memcpy(data.data(), *inputValue, inputSize * sizeof(uint32_t));
+                    data->resize(inputSize);
+                    std::memcpy(data->data(), *inputValue, inputSize * sizeof(uint32_t));
                 }
-                messageData.push_back(std::make_shared<std::vector<uint32_t>>(data));
+                else
+                {
+                    data->clear();
+                }
             }
             else
             {
                 auto inputValue = getAttributeReadableData<uint32_t>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                // See the eBool case above: always push, even on failure, to keep
-                // messageData aligned with messageFields.
                 checkCondition(inputValue, "Unable to read uint32 value");
-                messageData.push_back(std::make_shared<uint32_t>(inputValue ? *inputValue : 0));
+                *std::static_pointer_cast<uint32_t>(messageData[i]) = inputValue ? *inputValue : 0;
             }
             break;
         }
@@ -569,24 +578,26 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
         {
             if (messageField.isArray)
             {
-                size_t inputSize;
+                size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<int64_t*>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
-                std::vector<int64_t> data(inputSize);
+                auto data = std::static_pointer_cast<std::vector<int64_t>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read int64 array"))
                 {
-                    std::memcpy(data.data(), *inputValue, inputSize * sizeof(int64_t));
+                    data->resize(inputSize);
+                    std::memcpy(data->data(), *inputValue, inputSize * sizeof(int64_t));
                 }
-                messageData.push_back(std::make_shared<std::vector<int64_t>>(data));
+                else
+                {
+                    data->clear();
+                }
             }
             else
             {
                 auto inputValue = getAttributeReadableData<int64_t>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                // See the eBool case above: always push, even on failure, to keep
-                // messageData aligned with messageFields.
                 checkCondition(inputValue, "Unable to read int64 value");
-                messageData.push_back(std::make_shared<int64_t>(inputValue ? *inputValue : 0));
+                *std::static_pointer_cast<int64_t>(messageData[i]) = inputValue ? *inputValue : 0;
             }
             break;
         }
@@ -594,24 +605,26 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
         {
             if (messageField.isArray)
             {
-                size_t inputSize;
+                size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<uint64_t*>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
-                std::vector<uint64_t> data(inputSize);
+                auto data = std::static_pointer_cast<std::vector<uint64_t>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read uint64 array"))
                 {
-                    std::memcpy(data.data(), *inputValue, inputSize * sizeof(uint64_t));
+                    data->resize(inputSize);
+                    std::memcpy(data->data(), *inputValue, inputSize * sizeof(uint64_t));
                 }
-                messageData.push_back(std::make_shared<std::vector<uint64_t>>(data));
+                else
+                {
+                    data->clear();
+                }
             }
             else
             {
                 auto inputValue = getAttributeReadableData<uint64_t>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                // See the eBool case above: always push, even on failure, to keep
-                // messageData aligned with messageFields.
                 checkCondition(inputValue, "Unable to read uint64 value");
-                messageData.push_back(std::make_shared<uint64_t>(inputValue ? *inputValue : 0));
+                *std::static_pointer_cast<uint64_t>(messageData[i]) = inputValue ? *inputValue : 0;
             }
             break;
         }
@@ -619,24 +632,26 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
         {
             if (messageField.isArray)
             {
-                size_t inputSize;
+                size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<float*>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
-                std::vector<float> data(inputSize);
+                auto data = std::static_pointer_cast<std::vector<float>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read float array"))
                 {
-                    std::memcpy(data.data(), *inputValue, inputSize * sizeof(float));
+                    data->resize(inputSize);
+                    std::memcpy(data->data(), *inputValue, inputSize * sizeof(float));
                 }
-                messageData.push_back(std::make_shared<std::vector<float>>(data));
+                else
+                {
+                    data->clear();
+                }
             }
             else
             {
                 auto inputValue = getAttributeReadableData<float>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                // See the eBool case above: always push, even on failure, to keep
-                // messageData aligned with messageFields.
                 checkCondition(inputValue, "Unable to read float value");
-                messageData.push_back(std::make_shared<float>(inputValue ? *inputValue : 0.0));
+                *std::static_pointer_cast<float>(messageData[i]) = inputValue ? *inputValue : 0.0f;
             }
             break;
         }
@@ -644,24 +659,26 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
         {
             if (messageField.isArray)
             {
-                size_t inputSize;
+                size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<double*>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
-                std::vector<double> data(inputSize);
+                auto data = std::static_pointer_cast<std::vector<double>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read double array"))
                 {
-                    std::memcpy(data.data(), *inputValue, inputSize * sizeof(double));
+                    data->resize(inputSize);
+                    std::memcpy(data->data(), *inputValue, inputSize * sizeof(double));
                 }
-                messageData.push_back(std::make_shared<std::vector<double>>(data));
+                else
+                {
+                    data->clear();
+                }
             }
             else
             {
                 auto inputValue = getAttributeReadableData<double>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
-                // See the eBool case above: always push, even on failure, to keep
-                // messageData aligned with messageFields.
                 checkCondition(inputValue, "Unable to read double value");
-                messageData.push_back(std::make_shared<double>(inputValue ? *inputValue : 0.0));
+                *std::static_pointer_cast<double>(messageData[i]) = inputValue ? *inputValue : 0.0;
             }
             break;
         }
@@ -669,28 +686,30 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
         {
             if (messageField.isArray)
             {
-                size_t inputSize;
+                size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<NameToken*>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
-                std::vector<std::string> data(inputSize);
+                auto data = std::static_pointer_cast<std::vector<std::string>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read token array"))
                 {
-                    for (size_t j = 0; j < data.size(); ++j)
+                    data->resize(inputSize);
+                    for (size_t j = 0; j < inputSize; ++j)
                     {
-                        data[j] = db.tokenToString(*(*inputValue + j));
+                        (*data)[j] = db.tokenToString(*(*inputValue + j));
                     }
                 }
-                messageData.push_back(std::make_shared<std::vector<std::string>>(data));
+                else
+                {
+                    data->clear();
+                }
             }
             else
             {
                 auto inputValue = getAttributeReadableData<NameToken>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
                 std::string str = inputValue ? db.tokenToString(*inputValue) : "";
-                // See the eBool case above: always push, even on failure, to keep
-                // messageData aligned with messageFields.
                 checkCondition(inputValue, "Unable to read token value");
-                messageData.push_back(std::make_shared<std::string>(str));
+                *std::static_pointer_cast<std::string>(messageData[i]) = str;
             }
             break;
         }
@@ -698,18 +717,22 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
         {
             if (messageField.isArray)
             {
-                size_t inputSize;
+                size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<NameToken*>(
                     db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
-                std::vector<nlohmann::json> data(inputSize);
+                auto data = std::static_pointer_cast<std::vector<nlohmann::json>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read message array"))
                 {
-                    for (size_t j = 0; j < data.size(); ++j)
+                    data->resize(inputSize);
+                    for (size_t j = 0; j < inputSize; ++j)
                     {
-                        data[j] = db.tokenToString(*(*inputValue + j));
+                        (*data)[j] = db.tokenToString(*(*inputValue + j));
                     }
                 }
-                messageData.push_back(std::make_shared<std::vector<nlohmann::json>>(data));
+                else
+                {
+                    data->clear();
+                }
             }
             break;
         }
