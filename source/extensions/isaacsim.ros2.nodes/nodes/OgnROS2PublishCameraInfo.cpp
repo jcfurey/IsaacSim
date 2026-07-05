@@ -87,10 +87,14 @@ public:
 
             state.m_publisher = state.m_factory->createPublisher(
                 state.m_nodeHandle.get(), fullTopicName.c_str(), state.m_message->getTypeSupportHandle(), qos);
+            // Capture frameId once at publisher creation (matching the Imu/LaserScan/
+            // RawTransformTree publishers) instead of copying the string on every camera
+            // frame. frameId is a fixed input; changing it requires a stop/play cycle,
+            // which recreates the publisher and re-runs this block.
+            state.m_frameId = db.inputs.frameId();
             return true;
         }
 
-        state.m_frameId = db.inputs.frameId();
         state.publishCameraInfo(db);
         return true;
     }
@@ -123,6 +127,7 @@ public:
         if (physicalDistortion.length() > 0)
         {
             std::vector<double> coeff;
+            coeff.reserve(db.inputs.physicalDistortionCoefficients().size());
             for (size_t i = 0; i < db.inputs.physicalDistortionCoefficients().size(); i++)
             {
                 coeff.push_back(db.inputs.physicalDistortionCoefficients()[i]);
