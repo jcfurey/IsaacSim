@@ -78,6 +78,11 @@ public:
             const std::string& qosProfile = db.inputs.qosProfile();
             if (qosProfile.empty())
             {
+                // ROS 2 convention for sensor_msgs/Imu: use "sensor data" QoS (best-effort)
+                // so a slow/absent subscriber cannot back up the DDS queue and add latency
+                // to the live IMU stream. Matches the Image/CameraInfo publishers. Only
+                // applies when no explicit qosProfile was supplied.
+                qos.reliability = Ros2QoSReliabilityPolicy::eBestEffort;
                 qos.depth = db.inputs.queueSize();
             }
             else

@@ -141,6 +141,12 @@ bool PublisherBase::initialize(const std::string& nodeName,
     Ros2QoSProfile qos;
     if (qosProfile.empty())
     {
+        // ROS 2 convention for sensor data (this base backs the Image and PointCloud2
+        // publishers, both sensor_msgs streams): use "sensor data" QoS (best-effort) so a
+        // slow/absent subscriber cannot back up the DDS queue and add latency to the live
+        // stream. Matches the OGN Image/CameraInfo/LaserScan/Imu publishers. Only applies
+        // when no explicit qosProfile was supplied.
+        qos.reliability = Ros2QoSReliabilityPolicy::eBestEffort;
         qos.depth = queueSize;
     }
     else
