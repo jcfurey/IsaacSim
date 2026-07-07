@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.8] - 2026-07-07
+### Fixed
+- `RobotDefinitionReader`: discard responses from superseded requests (generation counter) instead of overwriting newer state.
+- `URDFImportFromROS2Node`: release the app-update observer after a 60 s response timeout so an unanswered request no longer leaks the command object and its per-frame tick.
+
 ## [2.3.7] - 2026-06-09
 ### Fixed
 - Fix linter errors and missing or incomplete docstrings.

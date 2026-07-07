@@ -222,6 +222,12 @@ class ROS2ServiceManager:
             self.executor_thread.join(timeout=1.0)
 
         with self._registry_lock:
+            # Flip the flag while holding the lock: register_service /
+            # register_action_server check it under the same lock, so a
+            # registration that was blocked on the lock while shutdown ran
+            # observes the shutdown when it resumes instead of operating on a
+            # destroyed node / cleared registry (TOCTOU).
+            self.is_initialized = False
             # Unregister all services using the proper unregister methods
             for service_name in self.services:
                 self.unregister_service(service_name, remove_from_dict=False)
@@ -244,7 +250,6 @@ class ROS2ServiceManager:
         except Exception:
             pass
 
-        self.is_initialized = False
         carb.log_info("ROS2 ServiceManager shutdown completed")
 
     def register_service(self, service_name: str, service_type: object, callback: callable) -> bool:
@@ -259,11 +264,14 @@ class ROS2ServiceManager:
             bool: True if registration was successful, False otherwise
 
         """
-        if not self.is_initialized:
-            carb.log_error("Cannot register service: ROS2 ServiceManager not initialized")
-            return False
-
         with self._registry_lock:
+            # Checked under the registry lock (not before it): shutdown() flips
+            # this flag while holding the lock, so a register call racing
+            # shutdown cannot pass a stale check and then create a service on a
+            # destroyed node.
+            if not self.is_initialized:
+                carb.log_error("Cannot register service: ROS2 ServiceManager not initialized")
+                return False
             if service_name in self.services:
                 carb.log_warn(f"Service '{service_name}' is already registered")
                 return False
@@ -318,7 +326,9 @@ class ROS2ServiceManager:
 
         """
         with self._registry_lock:
-            if not self.is_initialized or service_name not in self.services:
+            # remove_from_dict=False is the shutdown() bulk path, which flips
+            # is_initialized before unregistering; still perform the destroy.
+            if (not self.is_initialized and remove_from_dict) or service_name not in self.services:
                 return False
 
             try:
@@ -354,11 +364,11 @@ class ROS2ServiceManager:
             bool: True if registration was successful, False otherwise
 
         """
-        if not self.is_initialized:
-            carb.log_error("Cannot register action server: ROS2 ServiceManager not initialized")
-            return False
-
         with self._registry_lock:
+            # Checked under the registry lock -- see register_service.
+            if not self.is_initialized:
+                carb.log_error("Cannot register action server: ROS2 ServiceManager not initialized")
+                return False
             if action_name in self.action_servers:
                 carb.log_warn(f"Action server '{action_name}' is already registered")
                 return False
@@ -464,7 +474,9 @@ class ROS2ServiceManager:
 
         """
         with self._registry_lock:
-            if not self.is_initialized or action_name not in self.action_servers:
+            # remove_from_dict=False is the shutdown() bulk path, which flips
+            # is_initialized before unregistering; still perform the destroy.
+            if (not self.is_initialized and remove_from_dict) or action_name not in self.action_servers:
                 return False
 
             try:

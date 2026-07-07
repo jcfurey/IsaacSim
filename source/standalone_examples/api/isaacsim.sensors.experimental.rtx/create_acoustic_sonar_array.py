@@ -73,6 +73,8 @@ Fidelity notes (be aware of what this model can and cannot reproduce):
   transducer defaults, not the Oculus element response.
 """
 
+from __future__ import annotations
+
 import argparse
 import math
 import os
@@ -236,13 +238,13 @@ def generate_sonar_array_attributes(
 
 
 def beamform_das(
-    waveforms: "np.ndarray",
-    rx_y: "np.ndarray",
+    waveforms: np.ndarray,
+    rx_y: np.ndarray,
     sample_duration: float,
     num_beams: int,
     az_span_deg: float,
     speed_of_sound: float = SPEED_OF_SOUND,
-) -> tuple["np.ndarray", "np.ndarray", "np.ndarray"]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Non-coherent (envelope) delay-and-sum beamformer for a line array.
 
     Synthesizes the polar beams-x-range image a multibeam sonar outputs from
@@ -372,6 +374,11 @@ class GmoSonarArrayWriter(Writer):
 
     def write(self, data: dict[str, object]) -> None:
         """Build the per-element waveform matrix, beamform, and report once."""
+        if self._reported:
+            # One-shot writer: skip BEFORE parsing -- parse_generic_model_output_data
+            # copies and reparses the entire waveform buffer, a per-frame tax that
+            # would otherwise continue for the whole (unbounded) run.
+            return
         if "renderProducts" not in data:
             return
         for _rp_name, rp_data in data["renderProducts"].items():
@@ -407,22 +414,32 @@ class GmoSonarArrayWriter(Writer):
             waveforms = waveforms[first_tx_mask]
             sgw_rx = sgw_rx[first_tx_mask]
 
-            # order rows by element index. GMO reports mount IDs; map the
-            # sorted unique receiver IDs onto element order (all elements
-            # receive, so the sorted ID order matches element order).
+            # order rows by element index. GMO reports mount IDs, which are
+            # 0-based element indices (see the receiverIndices authoring above),
+            # so each row's Y coordinate is looked up by its OWN mount ID --
+            # never by row position: when some elements didn't receive, indexing
+            # positions by row counter would beamform surviving elements at the
+            # wrong coordinates and silently corrupt the array geometry.
             order = np.argsort(sgw_rx, kind="stable")
-            unique_rx = np.unique(sgw_rx)
-            if unique_rx.size != len(element_positions):
+            waveforms = waveforms[order]
+            row_ids = sgw_rx[order].astype(int)
+            valid = (row_ids >= 0) & (row_ids < len(element_positions))
+            if not valid.all():
+                print(f"  WARNING: dropping {int((~valid).sum())} signal ways with out-of-range receiver IDs")
+                waveforms = waveforms[valid]
+                row_ids = row_ids[valid]
+            if row_ids.size != len(element_positions):
                 print(
-                    f"  WARNING: {unique_rx.size} receivers seen, expected {len(element_positions)}; "
+                    f"  WARNING: {row_ids.size} receivers seen, expected {len(element_positions)}; "
                     "beamforming with the receivers present"
                 )
-            rx_y = np.asarray([element_positions[min(i, len(element_positions) - 1)][1] for i in range(unique_rx.size)])
+            positions_y = np.asarray([p[1] for p in element_positions])
+            rx_y = positions_y[row_ids]
             sample_duration = args.sample_duration or 0.0001024  # schema default
             az_span = args.az_span_deg or 90.0  # schema default
 
             image, beam_angles, ranges = beamform_das(
-                waveforms[order], rx_y, sample_duration, args.num_beams, az_span
+                waveforms, rx_y, sample_duration, args.num_beams, az_span
             )
             np.save(os.path.join(output_dir, "sonar_image.npy"), image)
             np.save(os.path.join(output_dir, "beam_angles_deg.npy"), beam_angles)

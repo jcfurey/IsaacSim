@@ -71,11 +71,10 @@ public:
             const std::string& qosProfile = db.inputs.qosProfile();
             if (qosProfile.empty())
             {
-                // CameraInfo is published in lockstep with its Image topic, which uses
-                // best-effort QoS; match it here too so a slow/absent subscriber cannot
-                // back up one topic's DDS queue while the other keeps flowing.
-                qos.reliability = Ros2QoSReliabilityPolicy::eBestEffort;
-                qos.depth = db.inputs.queueSize();
+                // ROS 2 sensor-data convention (see makeSensorDataQoSProfile): best-effort
+                // so a slow/absent subscriber cannot back up the DDS queue. Only applies
+                // when no explicit qosProfile was supplied.
+                qos = makeSensorDataQoSProfile(db.inputs.queueSize());
             }
             else
             {

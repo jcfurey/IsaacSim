@@ -72,12 +72,10 @@ public:
             const std::string& qosProfile = db.inputs.qosProfile();
             if (qosProfile.empty())
             {
-                // ROS 2 convention for image topics: best-effort ("sensor data") QoS so a
-                // slow/absent subscriber cannot back up the DDS queue and add latency,
-                // consistent with the uncompressed Image publisher. Only applies when the
-                // user has not explicitly supplied a qosProfile above.
-                qos.reliability = Ros2QoSReliabilityPolicy::eBestEffort;
-                qos.depth = db.inputs.queueSize();
+                // ROS 2 sensor-data convention (see makeSensorDataQoSProfile): best-effort
+                // so a slow/absent subscriber cannot back up the DDS queue. Only applies
+                // when no explicit qosProfile was supplied.
+                qos = makeSensorDataQoSProfile(db.inputs.queueSize());
             }
             else
             {

@@ -89,10 +89,14 @@ public:
         // scan) would otherwise be over-read.
         const size_t numPoints =
             db.inputs.dataPtr() != 0 ? db.inputs.bufferSize() / sizeof(GfVec3f) : db.inputs.data.size();
-        auto validateMetadataBuffer = [&](bool enabled, uint64_t bufferSizeBytes, size_t elementSize,
+        auto validateMetadataBuffer = [&](bool enabled, uint64_t ptr, uint64_t bufferSizeBytes, size_t elementSize,
                                           const char* fieldName)
         {
-            if (!enabled)
+            // Silently omit fields whose pointer input is unconnected (ptr == 0):
+            // that is a valid configuration (flag enabled, source not wired) that
+            // the pre-validation code accepted quietly; only a CONNECTED buffer
+            // that is too small for the point count deserves the warning below.
+            if (!enabled || ptr == 0)
             {
                 return false;
             }
@@ -109,60 +113,60 @@ public:
 
         isaacsim::ros2::nodes::PointCloudMetadata metadata;
         metadata.intensityPtr =
-            validateMetadataBuffer(db.inputs.outputIntensity(), db.inputs.intensityBufferSize(), sizeof(float),
+            validateMetadataBuffer(db.inputs.outputIntensity(), db.inputs.intensityPtr(), db.inputs.intensityBufferSize(), sizeof(float),
                                     "intensity")
                 ? reinterpret_cast<float*>(db.inputs.intensityPtr())
                 : nullptr;
         metadata.timestampPtr =
-            validateMetadataBuffer(db.inputs.outputTimestamp(), db.inputs.timestampBufferSize(), sizeof(uint64_t),
+            validateMetadataBuffer(db.inputs.outputTimestamp(), db.inputs.timestampPtr(), db.inputs.timestampBufferSize(), sizeof(uint64_t),
                                     "timestamp")
                 ? reinterpret_cast<uint64_t*>(db.inputs.timestampPtr())
                 : nullptr;
         metadata.emitterIdPtr =
-            validateMetadataBuffer(db.inputs.outputEmitterId(), db.inputs.emitterIdBufferSize(), sizeof(uint32_t),
+            validateMetadataBuffer(db.inputs.outputEmitterId(), db.inputs.emitterIdPtr(), db.inputs.emitterIdBufferSize(), sizeof(uint32_t),
                                     "emitterId")
                 ? reinterpret_cast<uint32_t*>(db.inputs.emitterIdPtr())
                 : nullptr;
         metadata.channelIdPtr =
-            validateMetadataBuffer(db.inputs.outputChannelId(), db.inputs.channelIdBufferSize(), sizeof(uint32_t),
+            validateMetadataBuffer(db.inputs.outputChannelId(), db.inputs.channelIdPtr(), db.inputs.channelIdBufferSize(), sizeof(uint32_t),
                                     "channelId")
                 ? reinterpret_cast<uint32_t*>(db.inputs.channelIdPtr())
                 : nullptr;
         metadata.materialIdPtr =
-            validateMetadataBuffer(db.inputs.outputMaterialId(), db.inputs.materialIdBufferSize(), sizeof(uint32_t),
+            validateMetadataBuffer(db.inputs.outputMaterialId(), db.inputs.materialIdPtr(), db.inputs.materialIdBufferSize(), sizeof(uint32_t),
                                     "materialId")
                 ? reinterpret_cast<uint32_t*>(db.inputs.materialIdPtr())
                 : nullptr;
         metadata.tickIdPtr =
-            validateMetadataBuffer(db.inputs.outputTickId(), db.inputs.tickIdBufferSize(), sizeof(uint32_t), "tickId")
+            validateMetadataBuffer(db.inputs.outputTickId(), db.inputs.tickIdPtr(), db.inputs.tickIdBufferSize(), sizeof(uint32_t), "tickId")
                 ? reinterpret_cast<uint32_t*>(db.inputs.tickIdPtr())
                 : nullptr;
         metadata.hitNormalPtr =
-            validateMetadataBuffer(db.inputs.outputHitNormal(), db.inputs.hitNormalBufferSize(), sizeof(GfVec3f),
+            validateMetadataBuffer(db.inputs.outputHitNormal(), db.inputs.hitNormalPtr(), db.inputs.hitNormalBufferSize(), sizeof(GfVec3f),
                                     "hitNormal")
                 ? reinterpret_cast<GfVec3f*>(db.inputs.hitNormalPtr())
                 : nullptr;
         metadata.velocityPtr =
-            validateMetadataBuffer(db.inputs.outputVelocity(), db.inputs.velocityBufferSize(), sizeof(GfVec3f),
+            validateMetadataBuffer(db.inputs.outputVelocity(), db.inputs.velocityPtr(), db.inputs.velocityBufferSize(), sizeof(GfVec3f),
                                     "velocity")
                 ? reinterpret_cast<GfVec3f*>(db.inputs.velocityPtr())
                 : nullptr;
         metadata.objectIdPtr =
-            validateMetadataBuffer(db.inputs.outputObjectId(), db.inputs.objectIdBufferSize(), sizeof(uint32_t),
+            validateMetadataBuffer(db.inputs.outputObjectId(), db.inputs.objectIdPtr(), db.inputs.objectIdBufferSize(), sizeof(uint32_t),
                                     "objectId")
                 ? reinterpret_cast<uint32_t*>(db.inputs.objectIdPtr())
                 : nullptr;
         metadata.echoIdPtr =
-            validateMetadataBuffer(db.inputs.outputEchoId(), db.inputs.echoIdBufferSize(), sizeof(uint8_t), "echoId")
+            validateMetadataBuffer(db.inputs.outputEchoId(), db.inputs.echoIdPtr(), db.inputs.echoIdBufferSize(), sizeof(uint8_t), "echoId")
                 ? reinterpret_cast<uint8_t*>(db.inputs.echoIdPtr())
                 : nullptr;
         metadata.tickStatePtr =
-            validateMetadataBuffer(db.inputs.outputTickState(), db.inputs.tickStateBufferSize(), sizeof(uint8_t),
+            validateMetadataBuffer(db.inputs.outputTickState(), db.inputs.tickStatePtr(), db.inputs.tickStateBufferSize(), sizeof(uint8_t),
                                     "tickState")
                 ? reinterpret_cast<uint8_t*>(db.inputs.tickStatePtr())
                 : nullptr;
         metadata.radialVelocityMSPtr =
-            validateMetadataBuffer(db.inputs.outputRadialVelocityMS(), db.inputs.radialVelocityMSBufferSize(),
+            validateMetadataBuffer(db.inputs.outputRadialVelocityMS(), db.inputs.radialVelocityMSPtr(), db.inputs.radialVelocityMSBufferSize(),
                                     sizeof(float), "radialVelocityMS")
                 ? reinterpret_cast<float*>(db.inputs.radialVelocityMSPtr())
                 : nullptr;

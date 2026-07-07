@@ -189,6 +189,12 @@ public:
         const auto& messageFields = std::static_pointer_cast<Ros2DynamicMessage>(state.m_message)->getMessageFields();
 
         size_t arraySize;
+        // On a failed attribute read (transient Fabric lookup miss, e.g. during
+        // dynamic-attribute churn) each branch below writes a DEFAULT into the
+        // field's slot before breaking: messageData is the message's persistent
+        // container reused across ticks, so leaving the slot untouched would
+        // silently republish the previous tick's value. This matches the
+        // failure semantics of writeMessageDataFromNode in Ros2OgnUtils.h.
         for (size_t i = 0; i < messageFields.size(); ++i)
         {
             const auto& messageField = messageFields.at(i);
@@ -201,7 +207,10 @@ public:
                     auto inputValue =
                         _getAttributeReadableArrayData<bool*>(db.abi_node(), "inputs:" + messageField.name, arraySize);
                     if (!inputValue)
+                    {
+                        std::static_pointer_cast<std::vector<bool>>(messageData[i])->clear();
                         break;
+                    }
                     auto data = std::static_pointer_cast<std::vector<bool>>(messageData[i]);
                     data->resize(arraySize);
                     // std::vector<bool> is a specialization that has no ::data
@@ -214,7 +223,10 @@ public:
                 {
                     auto inputValue = _getAttributeReadableData<bool>(db.abi_node(), "inputs:" + messageField.name);
                     if (!inputValue)
+                    {
+                        *std::static_pointer_cast<bool>(messageData[i]) = bool{};
                         break;
+                    }
                     *std::static_pointer_cast<bool>(messageData[i]) = *inputValue;
                 }
                 break;
@@ -226,7 +238,10 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<uint8_t*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     if (!inputValue)
+                    {
+                        std::static_pointer_cast<std::vector<uint8_t>>(messageData[i])->clear();
                         break;
+                    }
                     auto data = std::static_pointer_cast<std::vector<uint8_t>>(messageData[i]);
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(uint8_t));
@@ -235,7 +250,10 @@ public:
                 {
                     auto inputValue = _getAttributeReadableData<uint8_t>(db.abi_node(), "inputs:" + messageField.name);
                     if (!inputValue)
+                    {
+                        *std::static_pointer_cast<uint8_t>(messageData[i]) = uint8_t{};
                         break;
+                    }
                     *std::static_pointer_cast<uint8_t>(messageData[i]) = *inputValue;
                 }
                 break;
@@ -247,7 +265,10 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<int32_t*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     if (!inputValue)
+                    {
+                        std::static_pointer_cast<std::vector<int32_t>>(messageData[i])->clear();
                         break;
+                    }
                     auto data = std::static_pointer_cast<std::vector<int32_t>>(messageData[i]);
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(int32_t));
@@ -256,7 +277,10 @@ public:
                 {
                     auto inputValue = _getAttributeReadableData<int32_t>(db.abi_node(), "inputs:" + messageField.name);
                     if (!inputValue)
+                    {
+                        *std::static_pointer_cast<int32_t>(messageData[i]) = int32_t{};
                         break;
+                    }
                     *std::static_pointer_cast<int32_t>(messageData[i]) = *inputValue;
                 }
                 break;
@@ -268,7 +292,10 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<uint32_t*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     if (!inputValue)
+                    {
+                        std::static_pointer_cast<std::vector<uint32_t>>(messageData[i])->clear();
                         break;
+                    }
                     auto data = std::static_pointer_cast<std::vector<uint32_t>>(messageData[i]);
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(uint32_t));
@@ -277,7 +304,10 @@ public:
                 {
                     auto inputValue = _getAttributeReadableData<uint32_t>(db.abi_node(), "inputs:" + messageField.name);
                     if (!inputValue)
+                    {
+                        *std::static_pointer_cast<uint32_t>(messageData[i]) = uint32_t{};
                         break;
+                    }
                     *std::static_pointer_cast<uint32_t>(messageData[i]) = *inputValue;
                 }
                 break;
@@ -289,7 +319,10 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<int64_t*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     if (!inputValue)
+                    {
+                        std::static_pointer_cast<std::vector<int64_t>>(messageData[i])->clear();
                         break;
+                    }
                     auto data = std::static_pointer_cast<std::vector<int64_t>>(messageData[i]);
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(int64_t));
@@ -298,7 +331,10 @@ public:
                 {
                     auto inputValue = _getAttributeReadableData<int64_t>(db.abi_node(), "inputs:" + messageField.name);
                     if (!inputValue)
+                    {
+                        *std::static_pointer_cast<int64_t>(messageData[i]) = int64_t{};
                         break;
+                    }
                     *std::static_pointer_cast<int64_t>(messageData[i]) = *inputValue;
                 }
                 break;
@@ -310,7 +346,10 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<uint64_t*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     if (!inputValue)
+                    {
+                        std::static_pointer_cast<std::vector<uint64_t>>(messageData[i])->clear();
                         break;
+                    }
                     auto data = std::static_pointer_cast<std::vector<uint64_t>>(messageData[i]);
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(uint64_t));
@@ -319,7 +358,10 @@ public:
                 {
                     auto inputValue = _getAttributeReadableData<uint64_t>(db.abi_node(), "inputs:" + messageField.name);
                     if (!inputValue)
+                    {
+                        *std::static_pointer_cast<uint64_t>(messageData[i]) = uint64_t{};
                         break;
+                    }
                     *std::static_pointer_cast<uint64_t>(messageData[i]) = *inputValue;
                 }
                 break;
@@ -336,7 +378,10 @@ public:
                     auto inputValue =
                         _getAttributeReadableArrayData<float*>(db.abi_node(), "inputs:" + messageField.name, arraySize);
                     if (!inputValue)
+                    {
+                        std::static_pointer_cast<std::vector<float>>(messageData[i])->clear();
                         break;
+                    }
                     auto data = std::static_pointer_cast<std::vector<float>>(messageData[i]);
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(float));
@@ -345,7 +390,10 @@ public:
                 {
                     auto inputValue = _getAttributeReadableData<float>(db.abi_node(), "inputs:" + messageField.name);
                     if (!inputValue)
+                    {
+                        *std::static_pointer_cast<float>(messageData[i]) = float{};
                         break;
+                    }
                     *std::static_pointer_cast<float>(messageData[i]) = *inputValue;
                 }
                 break;
@@ -357,7 +405,10 @@ public:
                     auto inputValue =
                         _getAttributeReadableArrayData<double*>(db.abi_node(), "inputs:" + messageField.name, arraySize);
                     if (!inputValue)
+                    {
+                        std::static_pointer_cast<std::vector<double>>(messageData[i])->clear();
                         break;
+                    }
                     auto data = std::static_pointer_cast<std::vector<double>>(messageData[i]);
                     data->resize(arraySize);
                     std::memcpy(data->data(), *inputValue, arraySize * sizeof(double));
@@ -366,7 +417,10 @@ public:
                 {
                     auto inputValue = _getAttributeReadableData<double>(db.abi_node(), "inputs:" + messageField.name);
                     if (!inputValue)
+                    {
+                        *std::static_pointer_cast<double>(messageData[i]) = double{};
                         break;
+                    }
                     *std::static_pointer_cast<double>(messageData[i]) = *inputValue;
                 }
                 break;
@@ -378,7 +432,10 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<NameToken*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     if (!inputValue)
+                    {
+                        std::static_pointer_cast<std::vector<std::string>>(messageData[i])->clear();
                         break;
+                    }
                     auto data = std::static_pointer_cast<std::vector<std::string>>(messageData[i]);
                     data->resize(arraySize);
                     for (size_t j = 0; j < arraySize; ++j)
@@ -390,7 +447,10 @@ public:
                 {
                     auto inputValue = _getAttributeReadableData<NameToken>(db.abi_node(), "inputs:" + messageField.name);
                     if (!inputValue)
+                    {
+                        *std::static_pointer_cast<std::string>(messageData[i]) = std::string{};
                         break;
+                    }
                     *std::static_pointer_cast<std::string>(messageData[i]) = db.tokenToString(*inputValue);
                 }
                 break;
@@ -402,7 +462,10 @@ public:
                     auto inputValue = _getAttributeReadableArrayData<NameToken*>(
                         db.abi_node(), "inputs:" + messageField.name, arraySize);
                     if (!inputValue)
+                    {
+                        std::static_pointer_cast<std::vector<nlohmann::json>>(messageData[i])->clear();
                         break;
+                    }
                     auto data = std::static_pointer_cast<std::vector<nlohmann::json>>(messageData[i]);
                     data->resize(arraySize);
                     for (size_t j = 0; j < arraySize; ++j)

@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.6.7] - 2026-07-07
+### Fixed
+- Serialize timeline mutation between the executor-thread cancel callback and main-loop handlers.
+- Guard the service/action registry against concurrent registration and shutdown (registration checks now run under the registry lock).
+- Stamp `EntityState` headers with the current simulation time.
+
 ## [1.6.6] - 2026-06-09
 ### Fixed
 - Fix linter errors and missing or incomplete docstrings, and update `python_api.md`.

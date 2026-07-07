@@ -17,6 +17,7 @@
 
 import os
 import tempfile
+import time
 import typing
 from functools import partial
 
@@ -39,6 +40,10 @@ class URDFImportFromROS2Node(omni.kit.commands.Command):
         dest_path: Destination path for output assets.
         get_articulation_root: Whether to return articulation root.
     """
+
+    # How long to keep polling for the robot_description before releasing the
+    # app-update observer (which is what keeps this command object alive).
+    _RESPONSE_TIMEOUT_SEC = 60.0
 
     def __init__(
         self,
@@ -63,6 +68,14 @@ class URDFImportFromROS2Node(omni.kit.commands.Command):
         self.robot_definition.description_received_fn = partial(self.on_description_received)
         self.urdf_path = None
         self.finished = False
+        # The observer holds a strong reference to the bound method (and thus
+        # to this command object) -- that is the intended keep-alive while the
+        # asynchronous robot_description fetch is in flight. It also means
+        # __del__ can never free anything while the subscription exists, so
+        # the never-responds case must be handled by the timeout below, which
+        # releases the subscription (and with it the object) from inside the
+        # callback itself.
+        self._deadline = time.monotonic() + self._RESPONSE_TIMEOUT_SEC
         self.__subscription = carb.eventdispatcher.get_eventdispatcher().observe_event(
             event_name=omni.kit.app.GLOBAL_EVENT_UPDATE,
             on_event=self.on_app_update,
@@ -70,13 +83,7 @@ class URDFImportFromROS2Node(omni.kit.commands.Command):
         )
 
     def __del__(self) -> None:
-        """Release the app-update subscription if description_received_fn never fired.
-
-        Without this, a command whose ROS 2 node never responds (or is
-        dropped before on_app_update ever sees self.finished) keeps its
-        GLOBAL_EVENT_UPDATE observer registered forever, keeping this command
-        object alive and ticking every frame indefinitely.
-        """
+        """Safety net for explicit deletion before completion or timeout."""
         self.__subscription = None
 
     def on_app_update(self, event: typing.Any) -> None:
@@ -89,6 +96,18 @@ class URDFImportFromROS2Node(omni.kit.commands.Command):
             self.__subscription = None
             if self.urdf_path:
                 self.import_robot(self.urdf_path)
+            return
+        if time.monotonic() > self._deadline:
+            # The ROS 2 node never answered: release the observer so this
+            # command object stops ticking every frame and becomes
+            # collectable. Without this, the dispatcher's strong reference to
+            # the bound callback keeps the object (and the per-frame tick)
+            # alive for the life of the process.
+            carb.log_warn(
+                f"URDFImportFromROS2Node: no robot_description received from "
+                f"'{self.ros2_node_name}' within {self._RESPONSE_TIMEOUT_SEC} s; giving up."
+            )
+            self.__subscription = None
             return
 
     def on_description_received(self, urdf_description: str, package_found: bool = False) -> None:

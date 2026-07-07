@@ -53,6 +53,8 @@ Fidelity notes:
   nm), not acoustic impedance.
 """
 
+from __future__ import annotations
+
 import argparse
 import math
 import os
@@ -162,15 +164,15 @@ def generate_multibeam_lidar_attributes(
 
 
 def sonar_scanline_from_returns(
-    az_deg: "np.ndarray",
-    el_deg: "np.ndarray",
-    range_m: "np.ndarray",
+    az_deg: np.ndarray,
+    el_deg: np.ndarray,
+    range_m: np.ndarray,
     num_beams: int,
     az_span_deg: float,
     el_span_deg: float,
     near_range: float,
     far_range: float,
-) -> "np.ndarray":
+) -> np.ndarray:
     """Collapse spherical lidar returns into a per-beam nearest-range scanline.
 
     Mimics a multibeam sonar's per-beam output: every return inside the
@@ -279,6 +281,10 @@ class GmoMultibeamSonarWriter(Writer):
 
     def write(self, data: dict[str, object]) -> None:
         """Build the per-beam scanline and report once."""
+        if self._reported:
+            # One-shot writer: skip BEFORE parsing -- parse_generic_model_output_data
+            # copies and reparses the entire return buffer every frame otherwise.
+            return
         if "renderProducts" not in data:
             return
         for _rp_name, rp_data in data["renderProducts"].items():

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.0] - 2026-07-07
+### Changed
+- GMO-based sensor render products (lidar/radar/acoustic) are created at (1, 1) resolution instead of 300x300; the unused 2D image no longer costs per-sensor VRAM.
+- `_SensorRuntime.get_data` returns data on the annotator's creation device: `generic-model-output` and `stable-id-map` now return host data instead of a CUDA copy that consumers immediately downloaded.
+
+### Added
+- `_SensorRuntime.destroy()` for deterministic release of the render product, annotators, and writers.
+- `Acoustic`: `firingSeq` multi-apply schema inference; inference now also runs when wrapping existing prims, not only on creation.
+
+### Fixed
+- `_SensorRuntime.attach_annotators` only records annotators after a successful attach.
+
 ## [1.4.6] - 2026-06-12
 ### Fixed
 - `camera_utils.draw_annotator_data_to_image`: defer the `cv2` import to first use.
