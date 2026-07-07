@@ -151,7 +151,11 @@ bool Ros2SrtxLaserScanPublisher::initialize(const std::string& topicName,
     }
     else
     {
-        qos.depth = queueSize;
+        // ROS 2 sensor-data convention: keep the SRTX pipeline's default QoS
+        // identical to the OGN publishers for the same message types (see
+        // makeSensorDataQoSProfile) so switching pipelines does not silently
+        // change subscriber matching.
+        qos = isaacsim::ros2::core::makeSensorDataQoSProfile(queueSize);
     }
 
     std::string trimmedTopic = topicName;

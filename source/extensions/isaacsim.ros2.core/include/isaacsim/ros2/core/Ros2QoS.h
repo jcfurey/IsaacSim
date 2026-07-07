@@ -162,6 +162,29 @@ struct Ros2QoSProfile
     }
 };
 
+/**
+ * @brief Creates a "sensor data" QoS profile (best-effort reliability)
+ * @details
+ * The ROS 2 convention for raw sensor streams (`rclcpp::SensorDataQoS` /
+ * `rmw_qos_profile_sensor_data`) is best-effort reliability, so a slow or
+ * absent subscriber cannot back up the DDS queue and add latency to the live
+ * stream. This is the single source of the default used by every sensor
+ * publisher in the bridge (Image, CompressedImage, CameraInfo, LaserScan,
+ * Imu, PointCloud2 -- both the OGN nodes and the SRTX publishers) when the
+ * user has not supplied an explicit QoS profile; keep them on this factory so
+ * the pipelines cannot drift apart.
+ *
+ * @param[in] depth Message queue depth (typically the node's queueSize input)
+ * @return Ros2QoSProfile Best-effort, keep-last profile with the given depth
+ */
+inline Ros2QoSProfile makeSensorDataQoSProfile(size_t depth)
+{
+    Ros2QoSProfile qos;
+    qos.reliability = Ros2QoSReliabilityPolicy::eBestEffort;
+    qos.depth = depth;
+    return qos;
+}
+
 namespace
 {
 
