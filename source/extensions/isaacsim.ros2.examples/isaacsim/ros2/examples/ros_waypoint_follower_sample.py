@@ -59,7 +59,14 @@ class WaypointFollower(BaseResetNode):
         # while start_waypoint_follower() runs on a background thread; without
         # this lock, custom_reset() can destroy_node()/null out self._navigator
         # while the background thread is mid-call on the same navigator object.
+        # The lock must only ever be held around SHORT navigator calls: holding
+        # it across the unbounded Nav2 waits (waitUntilNav2Active, goToPose's
+        # wait_for_server) would let a parked worker block custom_reset() -- and
+        # with it the main thread -- indefinitely when Nav2 is absent. Blocking
+        # calls therefore run outside the lock, guarded by _reset_requested, and
+        # custom_reset() uses a bounded acquire as a last resort.
         self._navigator_lock = threading.Lock()
+        self._reset_requested = False
         super().__init__(initialize=False)
 
     def initialize_ros2_node(self):
@@ -101,16 +108,25 @@ class WaypointFollower(BaseResetNode):
         return pose
 
     def start_waypoint_follower(self):
+        # Snapshot the navigator under the lock, then run the unbounded Nav2
+        # waits OUTSIDE it: waitUntilNav2Active()/goToPose() loop forever while
+        # Nav2 is down, and holding the lock there would deadlock the main
+        # thread's custom_reset() on Stop. If a reset lands mid-wait, the
+        # navigator is destroyed under us and the calls raise -- the except
+        # blocks below turn that into the "Stopped" notification.
+        with self._navigator_lock:
+            if self._navigator is None or self._reset_requested:
+                return
+            navigator = self._navigator
         try:
-            with self._navigator_lock:
-                if self._navigator is None:
-                    return
-                # Avoid setting bogus initial pose
-                self._navigator.initial_pose_received = True
-                # Wait until the full navigation system is up and running.
-                self._navigator.waitUntilNav2Active()
+            # Avoid setting bogus initial pose
+            navigator.initial_pose_received = True
+            # Wait until the full navigation system is up and running.
+            navigator.waitUntilNav2Active()
         except Exception as e:
             post_notification("WaypointFollower Stopped!", status=NotificationStatus.WARNING)
+            return
+        if self._reset_requested:
             return
 
         waypoint = None
@@ -132,11 +148,11 @@ class WaypointFollower(BaseResetNode):
         post_notification("Moving towards waypoint", status=NotificationStatus.INFO)
 
         try:
-            with self._navigator_lock:
-                if self._navigator is None:
-                    return
-                # Call NavigateToPose action server with a goal/waypoint
-                self._navigator.goToPose(waypoint)
+            # goToPose() waits for the action server (unbounded when Nav2 is
+            # absent) -- run it outside the lock for the same reason as above.
+            if self._reset_requested:
+                return
+            navigator.goToPose(waypoint)
             time_diff = 10
             past_time = time.time()
 
@@ -188,7 +204,15 @@ class WaypointFollower(BaseResetNode):
     # This will also be called when the OmniGraph node is released.
     def custom_reset(self):
         try:
-            with self._navigator_lock:
+            # Signal the worker first so it bails at its next check, then wait a
+            # bounded time for it to leave its locked sections. If the worker is
+            # parked inside an unbounded Nav2 wait (which runs unlocked), proceed
+            # anyway: destroying the node under it raises in the worker, whose
+            # except blocks absorb it. Never wait unbounded here -- this runs on
+            # the main thread and would freeze the UI.
+            self._reset_requested = True
+            acquired = self._navigator_lock.acquire(timeout=5.0)
+            try:
                 if self._navigator:
                     self._navigator.destroy_node()
                     # Remove try-except block once below fix is reflected in debian file
@@ -197,12 +221,15 @@ class WaypointFollower(BaseResetNode):
                     try:
                         self._navigator.assisted_teleop_client.destroy()
                     except Exception as ex:
-                        print("Error while destroying Assisted Teleop",ex)
+                        carb.log_warn(f"Error while destroying Assisted Teleop: {ex}")
                     self._navigator = None
 
                     self.initialized = False
 
                     rclpy.try_shutdown()
+            finally:
+                if acquired:
+                    self._navigator_lock.release()
 
             global waypoint_follower
             waypoint_follower = None
@@ -273,7 +300,15 @@ class Patrolling(BaseResetNode):
         # while start_patrolling() runs on a background thread; without this
         # lock, custom_reset() can destroy_node()/null out self._navigator while
         # the background thread is mid-call on the same navigator object.
+        # The lock must only ever be held around SHORT navigator calls: holding
+        # it across the unbounded Nav2 waits (waitUntilNav2Active,
+        # followWaypoints' wait_for_server) would let a parked worker block
+        # custom_reset() -- and with it the main thread -- indefinitely when
+        # Nav2 is absent. Blocking calls therefore run outside the lock,
+        # guarded by _reset_requested, and custom_reset() uses a bounded
+        # acquire as a last resort.
         self._navigator_lock = threading.Lock()
+        self._reset_requested = False
         super().__init__(initialize=False)
 
     def initialize_ros2_node(self):
@@ -310,16 +345,25 @@ class Patrolling(BaseResetNode):
         return pose
 
     def start_patrolling(self):
+        # Snapshot the navigator under the lock, then run the unbounded Nav2
+        # waits OUTSIDE it: waitUntilNav2Active()/followWaypoints() loop forever
+        # while Nav2 is down, and holding the lock there would deadlock the
+        # main thread's custom_reset() on Stop. If a reset lands mid-wait, the
+        # navigator is destroyed under us and the calls raise -- the except
+        # blocks below turn that into the "Stopped" notification.
+        with self._navigator_lock:
+            if self._navigator is None or self._reset_requested:
+                return
+            navigator = self._navigator
         try:
-            with self._navigator_lock:
-                if self._navigator is None:
-                    return
-                # Avoid setting bogus initial pose
-                self._navigator.initial_pose_received = True
-                # Wait until the full navigation system is up and running
-                self._navigator.waitUntilNav2Active()
+            # Avoid setting bogus initial pose
+            navigator.initial_pose_received = True
+            # Wait until the full navigation system is up and running
+            navigator.waitUntilNav2Active()
         except Exception as e:
             post_notification("Patrolling Stopped!", status=NotificationStatus.WARNING)
+            return
+        if self._reset_requested:
             return
 
         waypoints = []
@@ -343,11 +387,12 @@ class Patrolling(BaseResetNode):
 
         while rclpy.ok():
             try:
-                with self._navigator_lock:
-                    if self._navigator is None:
-                        return
-                    # Call FollowWaypoints action server with list of waypoints
-                    self._navigator.followWaypoints(waypoints)
+                # followWaypoints() waits for the action server (unbounded when
+                # Nav2 is absent) -- run it outside the lock for the same reason
+                # as above.
+                if self._reset_requested:
+                    return
+                navigator.followWaypoints(waypoints)
                 time_diff = 10
                 past_time = time.time()
 
@@ -395,7 +440,15 @@ class Patrolling(BaseResetNode):
     # This will also be called when the OmniGraph node is released.
     def custom_reset(self):
         try:
-            with self._navigator_lock:
+            # Signal the worker first so it bails at its next check, then wait a
+            # bounded time for it to leave its locked sections. If the worker is
+            # parked inside an unbounded Nav2 wait (which runs unlocked), proceed
+            # anyway: destroying the node under it raises in the worker, whose
+            # except blocks absorb it. Never wait unbounded here -- this runs on
+            # the main thread and would freeze the UI.
+            self._reset_requested = True
+            acquired = self._navigator_lock.acquire(timeout=5.0)
+            try:
                 if self._navigator:
                     self._navigator.destroy_node()
                     # Remove try-except block once below fix is reflected in debian file
@@ -404,12 +457,15 @@ class Patrolling(BaseResetNode):
                     try:
                         self._navigator.assisted_teleop_client.destroy()
                     except Exception as ex:
-                        print("Error while destroying Assisted Teleop",ex)
+                        carb.log_warn(f"Error while destroying Assisted Teleop: {ex}")
                     self._navigator = None
 
                     self.initialized = False
 
                     rclpy.try_shutdown()
+            finally:
+                if acquired:
+                    self._navigator_lock.release()
         except Exception as e:
             post_notification("Node is reset!", status=NotificationStatus.WARNING)
 
