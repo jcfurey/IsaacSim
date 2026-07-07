@@ -191,7 +191,7 @@ public:
             return;
         }
         lock.unlock();
-        shutdownLocked();
+        _shutdownLocked(/*allowRestart*/ true);
     }
 
     // Blocks until no job belonging to `instanceKey` remains queued or in-flight on the shared
@@ -229,7 +229,9 @@ private:
     PublishImageWorkerThread() = default;
     ~PublishImageWorkerThread()
     {
-        shutdownLocked();
+        // No restart during static destruction: a freshly spawned thread would never be
+        // joined again and ~std::thread on a joinable thread terminates the process.
+        _shutdownLocked(/*allowRestart*/ false);
     }
 
     PublishImageWorkerThread(const PublishImageWorkerThread&) = delete;
@@ -237,10 +239,10 @@ private:
 
     void _workerThreadFunction();
 
-    // Unconditionally stops and joins the worker thread. Only to be called once the caller has
-    // established (via the refcount, or during static destruction) that no instance still needs
-    // the worker.
-    void shutdownLocked()
+    // Stops and joins the worker thread. Only to be called once the caller has established
+    // (via the refcount, or during static destruction) that no instance still needs the
+    // worker at the time of the call.
+    void _shutdownLocked(bool allowRestart)
     {
         {
             std::unique_lock<carb::thread::mutex> lock(m_queueMutex);
@@ -259,11 +261,31 @@ private:
 
         {
             std::unique_lock<carb::thread::mutex> lock(m_queueMutex);
-            m_workerThreadCreated = false;
             m_workerThreadShutdown = false;
+            // Close the release()/enqueueAndStart() race: between the worker's exit and this
+            // point the mutex was free, so a concurrently (re)registered instance may have
+            // called addRef() + enqueueAndStart() and -- because m_workerThreadCreated was
+            // still true -- pushed a job WITHOUT spawning a new worker. Left alone, that job
+            // would be stranded forever and the instance's later drainInstance() would wait
+            // indefinitely. If any instance holds a ref again, restart the worker to process
+            // the queue; otherwise drop the orphaned jobs (their owning instances have all
+            // released, so their resources may already be gone) and wake drain waiters.
+            if (!m_publishQueue.empty() && m_refCount > 0 && allowRestart)
+            {
+                m_workerThread = std::thread(&PublishImageWorkerThread::_workerThreadFunction, this);
+                // m_workerThreadCreated stays true; the new worker drains the queue and
+                // notifies m_drainCondition per job as usual.
+                return;
+            }
+            if (!m_publishQueue.empty())
+            {
+                std::queue<PublishImageThreadData> empty;
+                std::swap(m_publishQueue, empty);
+            }
+            m_workerThreadCreated = false;
         }
-        // Wake up any drainInstance() waiter: the worker is gone, so no instanceKey can ever
-        // become "in-flight" again and any remaining queued jobs will never be processed.
+        // Wake up any drainInstance() waiter: the worker is gone and the queue is empty, so
+        // no instanceKey can ever become "in-flight" again.
         m_drainCondition.notify_all();
     }
 

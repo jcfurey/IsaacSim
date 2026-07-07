@@ -73,6 +73,8 @@ Fidelity notes (be aware of what this model can and cannot reproduce):
   transducer defaults, not the Oculus element response.
 """
 
+from __future__ import annotations
+
 import argparse
 import math
 import os
@@ -236,13 +238,13 @@ def generate_sonar_array_attributes(
 
 
 def beamform_das(
-    waveforms: "np.ndarray",
-    rx_y: "np.ndarray",
+    waveforms: np.ndarray,
+    rx_y: np.ndarray,
     sample_duration: float,
     num_beams: int,
     az_span_deg: float,
     speed_of_sound: float = SPEED_OF_SOUND,
-) -> tuple["np.ndarray", "np.ndarray", "np.ndarray"]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Non-coherent (envelope) delay-and-sum beamformer for a line array.
 
     Synthesizes the polar beams-x-range image a multibeam sonar outputs from
