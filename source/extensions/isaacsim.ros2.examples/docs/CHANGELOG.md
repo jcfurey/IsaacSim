@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.5] - 2026-07-07
+### Fixed
+- Waypoint follower / patrolling samples: synchronize navigator teardown with the worker thread without holding the lock across unbounded Nav2 waits (stopping the simulation while Nav2 is down no longer freezes the UI); give each multi-robot instance its own navigator namespace; correct the goal-pose quaternion component order.
+
 ## [1.2.4] - 2026-06-09
 ### Fixed
 - Fix linter errors and missing or incomplete docstrings, and update `python_api.md`.

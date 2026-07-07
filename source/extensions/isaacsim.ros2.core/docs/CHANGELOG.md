@@ -1,4 +1,14 @@
 # Changelog
+
+## [1.10.0] - 2026-07-07
+### Changed
+- Add `makeSensorDataQoSProfile` to `Ros2QoS.h`: single source of the best-effort sensor-data QoS default used by all bridge sensor publishers.
+- `addTopicPrefix` treats absolute (leading `/`) topic names as namespace escapes and returns them unprefixed. Node-private (`~`) names are not supported (the bridge validates fully-expanded names) and are prefixed into the namespace as before.
+
+### Fixed
+- `Ros2DynamicMessage`: restore default-initialization of embedded message-array elements on every write so omitted fields cannot republish the previous tick's values.
+- `Ros2ContextHandle`: finalize previous init options on re-init; log the shutdown reason.
+- Fix rosidl sequence ownership and context lifetime issues in the message backend.
 ## [1.9.4] - 2026-06-12
 ### Fixed
 - `camera_info_utils.compute_relative_pose`: defer the `cv2` import to first use.

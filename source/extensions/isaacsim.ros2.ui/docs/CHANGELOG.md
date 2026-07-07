@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.6.6] - 2026-07-07
+### Fixed
+- `Ros2OdometryGraph.make_graph`: guard against missing tick/context/sim-time nodes (matching `Ros2TfPubGraph`).
+
 ## [1.6.5] - 2026-06-09
 ### Fixed
 - Fix linter errors and missing or incomplete docstrings.

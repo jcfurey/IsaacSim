@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.3.4] - 2026-07-07
+### Fixed
+- Only shut down rclpy on finalize when this extension initialized it; join the executor spin thread before destroying the node.
+
 ## [2.3.3] - 2026-06-09
 ### Fixed
 - Fix linter errors and missing or incomplete docstrings, and update `python_api.md`.

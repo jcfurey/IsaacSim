@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.19.0] - 2026-07-07
+### Changed
+- **Breaking**: sensor-data publishers (`OgnROS2PublishImage`, `OgnROS2PublishCompressedImage`, `OgnROS2PublishCameraInfo`, `OgnROS2PublishLaserScan`, `OgnROS2PublishImu`, and the `PublisherBase`-backed Image/PointCloud2 publishers, plus the `Ros2Srtx*Publisher` classes) now default to best-effort reliability when no `qosProfile` is supplied, following the ROS 2 sensor-data convention (`rmw_qos_profile_sensor_data`). Subscribers using the ROS 2 default reliable QoS must switch to best-effort (e.g. `rclpy.qos.qos_profile_sensor_data`) or an explicit `qosProfile` must be set on the publisher to restore the previous reliable behavior.
+- Consolidate the sensor-data QoS default into `makeSensorDataQoSProfile` (`isaacsim.ros2.core`) so the OGN and SRTX pipelines cannot drift apart.
+- `OgnROS2PublishCameraInfo` captures `frameId` once at publisher creation (matching the Image/Imu/LaserScan publishers) instead of copying it every frame; changing `frameId` now requires a stop/play cycle.
+
+### Fixed
+- `OgnROS2Publisher`: null-guard dynamic input reads instead of dereferencing missing attributes.
+- `OgnROS2PublishImage`: close a shutdown/enqueue race in the shared publish worker that could strand a queued job and hang node teardown.
+- `OgnROS2PublishPointCloud`: validate metadata buffer sizes against the point count before use; unconnected metadata pointers are omitted silently instead of over-read.
+- `OgnROS2ServiceClient`/`OgnROS2ServiceServerRequest`: resolve service names from the collected prim-hierarchy namespace; only emit response outputs when a response actually arrived; avoid per-call array deep-copies and container allocations in the dynamic message utilities.
+
 ## [1.18.13] - 2026-06-12
 ### Fixed
 - `OgnROS2CameraInfoHelper`: defer the `cv2` import to first use.
