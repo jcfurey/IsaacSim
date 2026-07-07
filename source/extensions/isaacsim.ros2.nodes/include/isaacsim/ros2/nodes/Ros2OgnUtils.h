@@ -450,16 +450,19 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
                                      std::string prependStr,
                                      bool isOutput)
 {
-    auto messageFields = std::static_pointer_cast<Ros2DynamicMessage>(message)->getMessageFields();
+    const auto& messageFields = std::static_pointer_cast<Ros2DynamicMessage>(message)->getMessageFields();
     // Reuse the message's persistent container (one shared_ptr<T> slot per
     // field, allocated once in Ros2DynamicMessageImpl::parseMessageFields)
     // instead of building a brand-new vector and make_shared'ing every field's
     // value from scratch on every call. This mirrors the pattern
     // OgnROS2Publisher::publisherCallback already uses for the same purpose.
     const auto& messageData = std::static_pointer_cast<Ros2DynamicMessage>(message)->getVectorContainer(true);
+    // Hoisted out of the per-field loop: inputOutput() returns a fresh
+    // std::string and the three-way concat allocated per field per call.
+    const std::string attrPrefix = inputOutput(isOutput) + ":" + prependStr;
     for (size_t i = 0; i < messageFields.size(); ++i)
     {
-        auto messageField = messageFields.at(i);
+        const auto& messageField = messageFields.at(i);
         switch (messageField.dataType)
         {
         case omni::fabric::BaseDataType::eBool:
@@ -468,7 +471,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<bool*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
+                    db.abi_node(), attrPrefix + messageField.name, inputSize);
                 auto data = std::static_pointer_cast<std::vector<bool>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read bool array"))
                 {
@@ -487,7 +490,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             else
             {
                 auto inputValue = getAttributeReadableData<bool>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 checkCondition(inputValue, "Unable to read bool value");
                 *std::static_pointer_cast<bool>(messageData[i]) = inputValue ? *inputValue : false;
             }
@@ -499,7 +502,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<uint8_t*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
+                    db.abi_node(), attrPrefix + messageField.name, inputSize);
                 auto data = std::static_pointer_cast<std::vector<uint8_t>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read uchar array"))
                 {
@@ -514,7 +517,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             else
             {
                 auto inputValue = getAttributeReadableData<uint8_t>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 checkCondition(inputValue, "Unable to read uchar value");
                 *std::static_pointer_cast<uint8_t>(messageData[i]) = inputValue ? *inputValue : 0;
             }
@@ -526,7 +529,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<int32_t*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
+                    db.abi_node(), attrPrefix + messageField.name, inputSize);
                 auto data = std::static_pointer_cast<std::vector<int32_t>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read int32 array"))
                 {
@@ -541,7 +544,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             else
             {
                 auto inputValue = getAttributeReadableData<int32_t>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 checkCondition(inputValue, "Unable to read int32 value");
                 *std::static_pointer_cast<int32_t>(messageData[i]) = inputValue ? *inputValue : 0;
             }
@@ -553,7 +556,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<uint32_t*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
+                    db.abi_node(), attrPrefix + messageField.name, inputSize);
                 auto data = std::static_pointer_cast<std::vector<uint32_t>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read uint32 array"))
                 {
@@ -568,7 +571,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             else
             {
                 auto inputValue = getAttributeReadableData<uint32_t>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 checkCondition(inputValue, "Unable to read uint32 value");
                 *std::static_pointer_cast<uint32_t>(messageData[i]) = inputValue ? *inputValue : 0;
             }
@@ -580,7 +583,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<int64_t*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
+                    db.abi_node(), attrPrefix + messageField.name, inputSize);
                 auto data = std::static_pointer_cast<std::vector<int64_t>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read int64 array"))
                 {
@@ -595,7 +598,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             else
             {
                 auto inputValue = getAttributeReadableData<int64_t>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 checkCondition(inputValue, "Unable to read int64 value");
                 *std::static_pointer_cast<int64_t>(messageData[i]) = inputValue ? *inputValue : 0;
             }
@@ -607,7 +610,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<uint64_t*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
+                    db.abi_node(), attrPrefix + messageField.name, inputSize);
                 auto data = std::static_pointer_cast<std::vector<uint64_t>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read uint64 array"))
                 {
@@ -622,7 +625,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             else
             {
                 auto inputValue = getAttributeReadableData<uint64_t>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 checkCondition(inputValue, "Unable to read uint64 value");
                 *std::static_pointer_cast<uint64_t>(messageData[i]) = inputValue ? *inputValue : 0;
             }
@@ -634,7 +637,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<float*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
+                    db.abi_node(), attrPrefix + messageField.name, inputSize);
                 auto data = std::static_pointer_cast<std::vector<float>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read float array"))
                 {
@@ -649,7 +652,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             else
             {
                 auto inputValue = getAttributeReadableData<float>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 checkCondition(inputValue, "Unable to read float value");
                 *std::static_pointer_cast<float>(messageData[i]) = inputValue ? *inputValue : 0.0f;
             }
@@ -661,7 +664,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<double*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
+                    db.abi_node(), attrPrefix + messageField.name, inputSize);
                 auto data = std::static_pointer_cast<std::vector<double>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read double array"))
                 {
@@ -676,7 +679,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             else
             {
                 auto inputValue = getAttributeReadableData<double>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 checkCondition(inputValue, "Unable to read double value");
                 *std::static_pointer_cast<double>(messageData[i]) = inputValue ? *inputValue : 0.0;
             }
@@ -688,7 +691,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<NameToken*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
+                    db.abi_node(), attrPrefix + messageField.name, inputSize);
                 auto data = std::static_pointer_cast<std::vector<std::string>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read token array"))
                 {
@@ -706,7 +709,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             else
             {
                 auto inputValue = getAttributeReadableData<NameToken>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 std::string str = inputValue ? db.tokenToString(*inputValue) : "";
                 checkCondition(inputValue, "Unable to read token value");
                 *std::static_pointer_cast<std::string>(messageData[i]) = str;
@@ -719,7 +722,7 @@ inline bool writeMessageDataFromNode(OmniGraphDatabase& db,
             {
                 size_t inputSize = 0;
                 auto inputValue = getAttributeReadableArrayData<NameToken*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, inputSize);
+                    db.abi_node(), attrPrefix + messageField.name, inputSize);
                 auto data = std::static_pointer_cast<std::vector<nlohmann::json>>(messageData[i]);
                 if (checkCondition(inputValue, "Unable to read message array"))
                 {
@@ -769,18 +772,21 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
                                           std::string prependStr,
                                           bool isOutput)
 {
-    const std::vector<std::shared_ptr<void>> messageData =
+    const auto& messageData =
         std::static_pointer_cast<Ros2DynamicMessage>(message)->readData(true);
-    auto messageFields = std::static_pointer_cast<Ros2DynamicMessage>(message)->getMessageFields();
+    const auto& messageFields = std::static_pointer_cast<Ros2DynamicMessage>(message)->getMessageFields();
     CARB_ASSERT(messageFields.size() == messageData.size());
 
+    // Hoisted out of the per-field loop: inputOutput() returns a fresh
+    // std::string and the three-way concat allocated per field per call.
+    const std::string attrPrefix = inputOutput(isOutput) + ":" + prependStr;
     for (size_t i = 0; i < messageFields.size(); ++i)
     {
         if (!messageData.at(i))
         {
             continue;
         }
-        auto messageField = messageFields.at(i);
+        const auto& messageField = messageFields.at(i);
         switch (messageField.dataType)
         {
         case omni::fabric::BaseDataType::eBool:
@@ -789,7 +795,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             {
                 const auto& data = *std::static_pointer_cast<const std::vector<bool>>(messageData.at(i));
                 auto outputValue = getAttributeWritableArrayData<bool*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, data.size());
+                    db.abi_node(), attrPrefix + messageField.name, data.size());
                 if (checkCondition(outputValue, "Unable to write bool array"))
                 {
                     // std::vector<bool> is a specialization that has no ::data
@@ -802,7 +808,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             else
             {
                 auto outputValue = getAttributeWritableData<bool>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 if (checkCondition(outputValue, "Unable to write bool value"))
                 {
                     *outputValue = *std::static_pointer_cast<bool>(messageData.at(i));
@@ -817,7 +823,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
 
                 const auto& data = *std::static_pointer_cast<const std::vector<uint8_t>>(messageData.at(i));
                 auto outputValue = getAttributeWritableArrayData<uint8_t*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, data.size());
+                    db.abi_node(), attrPrefix + messageField.name, data.size());
                 if (checkCondition(outputValue, "Unable to write uchar array"))
                 {
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(uint8_t));
@@ -826,7 +832,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             else
             {
                 auto outputValue = getAttributeWritableData<uint8_t>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 if (checkCondition(outputValue, "Unable to write uchar value"))
                 {
                     *outputValue = *std::static_pointer_cast<uint8_t>(messageData.at(i));
@@ -840,7 +846,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             {
                 const auto& data = *std::static_pointer_cast<const std::vector<int32_t>>(messageData.at(i));
                 auto outputValue = getAttributeWritableArrayData<int32_t*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, data.size());
+                    db.abi_node(), attrPrefix + messageField.name, data.size());
                 if (checkCondition(outputValue, "Unable to write int array"))
                 {
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(int32_t));
@@ -849,7 +855,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             else
             {
                 auto outputValue = getAttributeWritableData<int32_t>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 if (checkCondition(outputValue, "Unable to write int value"))
                 {
                     *outputValue = *std::static_pointer_cast<int32_t>(messageData.at(i));
@@ -863,7 +869,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             {
                 const auto& data = *std::static_pointer_cast<const std::vector<uint32_t>>(messageData.at(i));
                 auto outputValue = getAttributeWritableArrayData<uint32_t*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, data.size());
+                    db.abi_node(), attrPrefix + messageField.name, data.size());
                 if (checkCondition(outputValue, "unable to write uint array"))
                 {
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(uint32_t));
@@ -872,7 +878,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             else
             {
                 auto outputValue = getAttributeWritableData<uint32_t>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 if (checkCondition(outputValue, "unable to write uint value"))
                 {
                     *outputValue = *std::static_pointer_cast<uint32_t>(messageData.at(i));
@@ -886,7 +892,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             {
                 const auto& data = *std::static_pointer_cast<const std::vector<int64_t>>(messageData.at(i));
                 auto outputValue = getAttributeWritableArrayData<int64_t*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, data.size());
+                    db.abi_node(), attrPrefix + messageField.name, data.size());
                 if (checkCondition(outputValue, "Unable to write int64 array"))
                 {
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(int64_t));
@@ -895,7 +901,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             else
             {
                 auto outputValue = getAttributeWritableData<int64_t>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 if (checkCondition(outputValue, "Unable to write int64 value"))
                 {
                     *outputValue = *std::static_pointer_cast<int64_t>(messageData.at(i));
@@ -909,7 +915,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             {
                 const auto& data = *std::static_pointer_cast<const std::vector<uint64_t>>(messageData.at(i));
                 auto outputValue = getAttributeWritableArrayData<uint64_t*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, data.size());
+                    db.abi_node(), attrPrefix + messageField.name, data.size());
                 if (checkCondition(outputValue, "Unable to write uint64 array"))
                 {
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(uint64_t));
@@ -918,7 +924,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             else
             {
                 auto outputValue = getAttributeWritableData<uint64_t>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 if (checkCondition(outputValue, "Unable to write uint64 value"))
                 {
                     *outputValue = *std::static_pointer_cast<uint64_t>(messageData.at(i));
@@ -932,7 +938,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             {
                 const auto& data = *std::static_pointer_cast<const std::vector<float>>(messageData.at(i));
                 auto outputValue = getAttributeWritableArrayData<float*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, data.size());
+                    db.abi_node(), attrPrefix + messageField.name, data.size());
                 if (checkCondition(outputValue, "Unable to write float array"))
                 {
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(float));
@@ -941,7 +947,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             else
             {
                 auto outputValue = getAttributeWritableData<float>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 if (checkCondition(outputValue, "Unable to write float value"))
                 {
                     *outputValue = *std::static_pointer_cast<float>(messageData.at(i));
@@ -956,7 +962,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
 
                 const auto& data = *std::static_pointer_cast<const std::vector<double>>(messageData.at(i));
                 auto outputValue = getAttributeWritableArrayData<double*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, data.size());
+                    db.abi_node(), attrPrefix + messageField.name, data.size());
                 if (checkCondition(outputValue, "Unable to write double array"))
                 {
                     std::memcpy(*outputValue, data.data(), data.size() * sizeof(double));
@@ -965,7 +971,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             else
             {
                 auto outputValue = getAttributeWritableData<double>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 if (checkCondition(outputValue, "Unable to write double value"))
                 {
                     *outputValue = *std::static_pointer_cast<double>(messageData.at(i));
@@ -979,7 +985,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             {
                 const auto& stringValues = *std::static_pointer_cast<const std::vector<std::string>>(messageData.at(i));
                 auto outputValue = getAttributeWritableArrayData<NameToken*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, stringValues.size());
+                    db.abi_node(), attrPrefix + messageField.name, stringValues.size());
                 if (checkCondition(outputValue, "Unable to write token array"))
                 {
                     for (size_t j = 0; j < stringValues.size(); ++j)
@@ -992,7 +998,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             {
                 const auto& stringValue = *std::static_pointer_cast<const std::string>(messageData.at(i));
                 auto outputValue = getAttributeWritableData<NameToken>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name);
+                    db.abi_node(), attrPrefix + messageField.name);
                 if (checkCondition(outputValue, "Unable to write token value"))
                 {
                     *outputValue = db.stringToToken(stringValue.c_str());
@@ -1006,7 +1012,7 @@ inline bool writeNodeAttributeFromMessage(OmniGraphDatabase& db,
             {
                 const auto& array = *std::static_pointer_cast<const std::vector<nlohmann::json>>(messageData.at(i));
                 auto outputValue = getAttributeWritableArrayData<NameToken*>(
-                    db.abi_node(), inputOutput(isOutput) + ":" + prependStr + messageField.name, array.size());
+                    db.abi_node(), attrPrefix + messageField.name, array.size());
                 if (checkCondition(outputValue, "Unable to write message array"))
                 {
                     for (size_t j = 0; j < array.size(); ++j)

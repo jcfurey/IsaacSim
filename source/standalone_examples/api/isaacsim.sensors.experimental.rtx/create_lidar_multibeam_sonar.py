@@ -279,6 +279,10 @@ class GmoMultibeamSonarWriter(Writer):
 
     def write(self, data: dict[str, object]) -> None:
         """Build the per-beam scanline and report once."""
+        if self._reported:
+            # One-shot writer: skip BEFORE parsing -- parse_generic_model_output_data
+            # copies and reparses the entire return buffer every frame otherwise.
+            return
         if "renderProducts" not in data:
             return
         for _rp_name, rp_data in data["renderProducts"].items():

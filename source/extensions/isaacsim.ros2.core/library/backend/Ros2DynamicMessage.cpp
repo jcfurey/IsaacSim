@@ -506,19 +506,15 @@ void Ros2DynamicMessageImpl::setArrayEmbeddedMessage(const rosidl_typesupport_in
     // non-fixed size array
     if (member->is_upper_bound_ || !member->array_size_)
     {
-        // The generated resize_function() unconditionally finalizes and reinitializes the whole
-        // sub-message sequence (fini() + init()), even when the requested size matches the
-        // current size. That is safe (no leak/double-free: fini() fully tears down every element
-        // before init() recreates them) but wasteful: it is called every publish tick, so for a
-        // hot-path publisher with a stable-size sub-message array (e.g. detections/fields) this
-        // means a full heap free+alloc (recursively finalizing/reinitializing every element, and
-        // any strings/arrays nested within) each tick even though nothing about the size changed.
-        // Skip the resize call in that case: get_function()/setMessageValues() below can then
-        // safely overwrite the existing elements in place.
-        if (member->size_function(data) != array.size())
-        {
-            member->resize_function(data, array.size());
-        }
+        // Always resize (fini() + init()), even when the requested size matches the current
+        // size. Skipping the call when the size is unchanged looks like an attractive
+        // optimization (it avoids a per-tick heap free+alloc for stable-size arrays), but it
+        // is INCORRECT: setMessageValues() below fills each element from JSON and skips any
+        // member key absent from the element's JSON object, so the fini()+init() teardown is
+        // the only thing guaranteeing that omitted fields read as freshly default-initialized.
+        // With the skip, an element that set a field at tick N and omitted it at tick N+1
+        // would silently republish tick N's stale value.
+        member->resize_function(data, array.size());
         for (size_t i = 0; i < array.size(); ++i)
         {
             setMessageValues(embeddedMembers, reinterpret_cast<uint8_t*>(member->get_function(data, i)), array.at(i));
